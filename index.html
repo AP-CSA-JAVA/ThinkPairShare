@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Think Pair Share</title>
+<style>
+:root{
+  --bg:#f4f6fb; --card:#fff; --ink:#1b2333; --muted:#5d6780; --line:#dfe3ee;
+  --accent:#2f6fde; --danger:#d33a3a; --ok:#1f9d55;
+  --think:#7b4fd6; --pair:#0f9585; --write:#d9700c; --share:#2f6fde; --lobby:#5d6780;
+  --phase:var(--lobby);
+  --radius:14px; --shadow:0 1px 2px rgba(20,30,60,.06),0 4px 14px rgba(20,30,60,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#11151f; --card:#1a2030; --ink:#e8ecf5; --muted:#9aa4bd; --line:#2d3550; --shadow:none; }
+}
+body[data-phase=think]{--phase:var(--think)}
+body[data-phase=pair]{--phase:var(--pair)}
+body[data-phase=write]{--phase:var(--write)}
+body[data-phase=share]{--phase:var(--share)}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+a{color:var(--accent)}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:.5rem .85rem}
+button:hover:not(:disabled){border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.55rem .7rem;width:100%}
+textarea{resize:vertical}
+textarea:disabled{background:var(--bg)}
+label{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:1rem}
+.wrap{max-width:1320px;margin:0 auto;padding:16px}
+header.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;background:var(--card);border-bottom:3px solid var(--phase);position:sticky;top:0;z-index:5}
+.logo{font-weight:800;letter-spacing:.02em;font-size:1.1rem}
+.logo span{color:var(--phase)}
+.spacer{flex:1}
+.code{font:700 1.15rem ui-monospace,Menlo,Consolas,monospace;letter-spacing:.15em;background:var(--bg);border:1px dashed var(--muted);padding:.15rem .55rem;border-radius:8px}
+.badge{display:inline-block;font-size:.8rem;padding:.2rem .6rem;border-radius:999px;background:#fff3cd;color:#6b4f00;border:1px solid #f0d98a}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+h2{font-size:.85rem;margin:0 0 .6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.stack{display:grid;gap:16px}
+.grid-t{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start}
+@media (max-width:920px){.grid-t{grid-template-columns:1fr}}
+
+/* timer + phases */
+.phases{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.phases button{padding:.5rem .1rem;font-weight:700;font-size:.85rem}
+.phases button.on{color:#fff;border-color:transparent}
+.phases button[data-p=lobby].on{background:var(--lobby)}
+.phases button[data-p=think].on{background:var(--think)}
+.phases button[data-p=pair].on{background:var(--pair)}
+.phases button[data-p=write].on{background:var(--write)}
+.phases button[data-p=share].on{background:var(--share)}
+.timer{font:800 3.6rem/1 ui-monospace,Menlo,Consolas,monospace;text-align:center;color:var(--phase);font-variant-numeric:tabular-nums;margin:.5rem 0}
+.done{animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
+.bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--phase);width:0;transition:width .25s linear}
+.dur{display:grid;grid-template-columns:1fr auto auto auto;gap:6px 8px;align-items:center;font-size:.95rem}
+.dur b{font-family:ui-monospace,Menlo,Consolas,monospace;min-width:3.4em;text-align:center;cursor:pointer;border-bottom:1px dotted var(--muted)}
+.dur button{padding:.15rem .6rem}
+#tMinus,#tPlus,#tReset,#tStart{padding:.5rem .65rem}
+.toggle{display:flex;align-items:center;gap:8px;margin:.4rem 0;font-size:.95rem;cursor:pointer}
+.toggle input{width:auto;margin:0}
+
+/* board */
+.tray{min-height:58px;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;padding:8px;border:2px dashed var(--line);border-radius:12px;margin-top:6px}
+.over{border-color:var(--accent)!important;background:color-mix(in srgb,var(--accent) 9%,transparent)!important}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:.3rem .55rem;border-radius:999px;border:1px solid var(--line);background:var(--bg);font-size:.9rem;user-select:none;cursor:pointer;max-width:100%}
+.chip.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip.gone{opacity:.55;font-style:italic}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:#b7bfd1;flex:none}
+.chip .dot.on{background:var(--ok)}
+.chip .x{border:0;background:none;padding:0 0 0 2px;color:inherit;opacity:.6;font-size:1.05rem;line-height:1}
+.chip .x:hover{opacity:1}
+.groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:14px}
+.gcard{border:2px solid var(--line);border-radius:12px;padding:10px;background:var(--card);display:flex;flex-direction:column;gap:8px}
+.gcard.spot{border-color:var(--share);box-shadow:0 0 0 3px color-mix(in srgb,var(--share) 25%,transparent)}
+.gcard.flag{border-color:var(--danger)}
+.gcard.newg{border-style:dashed;align-items:center;justify-content:center;color:var(--muted);min-height:120px;text-align:center;font-size:.9rem}
+.ghead{display:flex;align-items:center;gap:6px}
+.resp{font-size:.95rem;white-space:pre-wrap;word-break:break-word;background:var(--bg);border-radius:8px;padding:8px;min-height:3.2em;max-height:10em;overflow:auto}
+.resp.empty{color:var(--muted);font-style:italic}
+.flagtag{font-size:.72rem;color:#fff;background:var(--danger);border-radius:6px;padding:.05rem .4rem}
+.spotbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--share);color:#fff;border-radius:12px;padding:10px 14px;margin-bottom:12px}
+.spotbar button{background:#fff;color:#1b2333;border:0}
+
+/* student */
+.s-wrap{max-width:760px;margin:0 auto;padding:16px;display:grid;gap:14px}
+.phasebanner{background:var(--phase);color:#fff;border-radius:var(--radius);padding:14px 18px;display:flex;align-items:center;gap:16px}
+.phasebanner .pname{font-weight:800;font-size:1.5rem;letter-spacing:.1em}
+.phasebanner .ptip{flex:1;font-size:.95rem}
+.phasebanner .ptime{font:800 2.4rem/1 ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+@media (max-width:520px){.phasebanner{flex-wrap:wrap}.phasebanner .ptip{order:3;flex-basis:100%}}
+.topic{font-size:1.25rem;font-weight:600;white-space:pre-wrap;word-break:break-word}
+.partners{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.status{font-size:.85rem;color:var(--muted)}
+.warn{color:var(--danger);font-size:.88rem;margin-top:4px}
+.spotcard{border:2px solid var(--share)}
+.spotcard h2{color:var(--share)}
+
+/* projector */
+.present{min-height:100vh;display:flex;flex-direction:column;padding:3vh 4vw;gap:2.5vh}
+.present .ptopic{font-size:clamp(1.6rem,3.6vw,3.3rem);font-weight:700;white-space:pre-wrap;word-break:break-word}
+.present .plabel{font-weight:800;letter-spacing:.25em;color:var(--phase);font-size:clamp(1.2rem,2.6vw,2.2rem);text-align:center}
+.present .pbig{font:800 clamp(5rem,19vw,17rem)/1 ui-monospace,Menlo,Consolas,monospace;color:var(--phase);text-align:center;font-variant-numeric:tabular-nums}
+.present .pbig.mini{font-size:clamp(2.5rem,6vw,5rem)}
+.present .pbig.codeview{letter-spacing:.12em;font-size:clamp(4rem,14vw,12rem)}
+.present .pshare{font-size:clamp(1.6rem,3.4vw,3.1rem);white-space:pre-wrap;word-break:break-word;background:var(--card);border-left:12px solid var(--share);border-radius:16px;padding:3vh 3vw;box-shadow:var(--shadow)}
+.present .pwho{font-size:.5em;color:var(--muted);margin-bottom:.5em}
+.present .pjoin{font-size:clamp(1rem,1.6vw,1.4rem);color:var(--muted)}
+
+/* landing */
+.land{max-width:640px;margin:7vh auto 0;padding:16px;display:grid;gap:18px;text-align:center}
+.land h1{font-size:2.4rem;margin:0}
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.choices button{padding:1.3rem;font-size:1.1rem;font-weight:700}
+@media (max-width:480px){.choices{grid-template-columns:1fr}}
+.joinform{text-align:left;display:grid;gap:12px}
+.joinform input#jCode{font:700 1.5rem ui-monospace,Menlo,Consolas,monospace;letter-spacing:.25em;text-transform:uppercase}
+footer{text-align:center;padding:28px 16px;font-size:.8rem;color:var(--muted)}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1b2333;color:#fff;padding:.6rem 1rem;border-radius:10px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:50;max-width:90vw}
+.toast.show{opacity:1}
+</style>
+</head>
+<body data-phase="lobby">
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+/* ==================================================================
+   THINK · PAIR · SHARE
+   ------------------------------------------------------------------
+   CONFIG: paste your Firebase web-app config below to use with a class.
+   Leave it as null to run in DEMO MODE (one computer, several tabs).
+   See README.md for the 5-minute Firebase setup.
+   ================================================================== */
+const FIREBASE_CONFIG = null;
+/* Example:
+const FIREBASE_CONFIG = {
+  apiKey: "AIza...",
+  authDomain: "your-project.firebaseapp.com",
+  databaseURL: "https://your-project-default-rtdb.firebaseio.com",
+  projectId: "your-project",
+  appId: "1:123:web:abc"
+};
+*/
+
+const MAX_STUDENTS = 40;   // class size cap
+const MAX_GROUP    = 3;    // pairs, plus a forced third
+const MAX_CHARS    = 1000; // response length limit
+const ONLINE_MS    = 45000;
+
+const PHASES = {
+  lobby:{label:'Lobby', tip:'Waiting for your teacher to start…'},
+  think:{label:'Think', tip:'Think on your own first. Jot private notes below — only you can see them.'},
+  pair: {label:'Pair',  tip:'Talk it over with your partner(s). Agree on your best ideas.'},
+  write:{label:'Write', tip:'Type your group’s response. One person types — decide together!'},
+  share:{label:'Share', tip:'Listen as groups share their thinking with the class.'}
+};
+const PHASE_ORDER = ['lobby','think','pair','write','share'];
+const TIMED = ['think','pair','write','share'];
+
+/* ------------------------------ helpers ------------------------------ */
+const $  = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = s => { s = Math.max(0, Math.round(s)); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); };
+const R = code => 'rooms/' + code;
+function rand(n){ return crypto.getRandomValues(new Uint32Array(n)); }
+function uid(n=8){ const a='abcdefghijkmnpqrstuvwxyz23456789'; return [...rand(n)].map(x=>a[x%a.length]).join(''); }
+function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=rand(1)[0]%(i+1); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+function parseTime(str){ const m=String(str||'').trim().match(/^(\d{1,3})(?::(\d{1,2}))?$/); if(!m) return null; return m[2]!=null ? (+m[1])*60 + (+m[2]) : (+m[1])*60; }
+function setPhase(p){ document.body.dataset.phase = p || 'lobby'; }
+function setURL(q){ try{ history.replaceState(null,'',location.pathname + q); }catch{} }
+function lsGet(k, s=localStorage){ try{ return JSON.parse(s.getItem(k)); }catch{ return null; } }
+function lsSet(k, v, s=localStorage){ try{ s.setItem(k, JSON.stringify(v)); }catch{} }
+function lsDel(k, s=localStorage){ try{ s.removeItem(k); }catch{} }
+let toastT; function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2600); }
+function joinURL(code){ return location.origin + location.pathname + '?room=' + code; }
+function joinShort(){ return (location.host + location.pathname).replace(/index\.html$/,''); }
+function footer(){ return `<footer>Think · Pair · Share · <a href="https://github.com/ap-csa-java" target="_blank" rel="noopener">ap-csa-java</a></footer>`; }
+function demoNote(){ return `<div><span class="badge">Demo mode: works across tabs on this one computer. Add Firebase settings to use it with a class.</span></div>`; }
+function remaining(t){ if(!t) return 0; return t.running ? Math.max(0,(t.endsAt - store.now())/1000) : (t.remaining||0); }
+function sortedMembers(g){ return Object.entries(g.members||{}).sort((a,b)=>(a[1].o||0)-(b[1].o||0)); }
+
+let teardown = [];
+function clearView(){ teardown.forEach(f=>{ try{f();}catch{} }); teardown=[]; }
+
+/* ------------------------------ sound ------------------------------ */
+let actx = null;
+function unlockAudio(){ try{ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch{} }
+function chime(){
+  if(!actx) return; const t=actx.currentTime;
+  [0,.28,.56].forEach((d,i)=>{ const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine'; o.frequency.value = i===2 ? 1046 : 784;
+    g.gain.setValueAtTime(.0001,t+d); g.gain.exponentialRampToValueAtTime(.35,t+d+.02); g.gain.exponentialRampToValueAtTime(.0001,t+d+.25);
+    o.connect(g).connect(actx.destination); o.start(t+d); o.stop(t+d+.3); });
+}
+
+/* ==================================================================
+   PROFANITY FILTER
+   Word lists are ROT13-encoded so the source reads cleanly.
+   Catches leetspeak (sh!t, @ss), stretched letters (fuuuck),
+   and spaced/dotted spelling (f u c k, f.u.c.k).
+   Teachers can add extra words in Settings.
+   ================================================================== */
+/*FILTER-START*/
+const ROT13 = s => s.replace(/[a-z]/g, c => String.fromCharCode((c.charCodeAt(0)-97+13)%26+97));
+const BAD_EXACT    = new Set('nff,nffung,nefr,onfgneq,obbo,obbof,ohggubyr,pbpx,penc,phag,qnza,qnzarq,qnzzvg,qnzavg,tbqqnza,qvpx,qlxr,snt,sntbg,ubeal,wnpxnff,qhzonff,fznegnff,onqnff,xvxr,xlf,zvys,avttn,avttnf,avttnm,avttre,avttref,cvff,cvffrq,chffl,chffvrf,ergneq,ergneqrq,ergneqf,fxnax,fcvp,fgsh,jgs,szy,gvg,gvgf,gubg,genaal,gjng,jnax,jnaxre,jrgonpx'.split(',').map(ROT13));
+const BAD_CONTAINS = 'shpx,fuvg,ovgpu,nffubyr,juber,fyhg,snttbg,qvyqb,wvmm,cbea,qvpxurnq,qbhpur,pbpxfhpxre,obyybpx,gvggvrf,zbgures'.split(',').map(ROT13);
+const collapse = w => w.replace(/(.)\1+/g,'$1');
+const BAD_EXACT_C    = new Set([...BAD_EXACT].map(collapse).filter(w=>w.length>=4));
+const BAD_CONTAINS_C = BAD_CONTAINS.map(collapse);
+const LEET = {'0':'o','1':'i','!':'i','|':'i','3':'e','4':'a','@':'a','5':'s','$':'s','7':'t','+':'t','8':'b','9':'g','(':'c'};
+
+function norm(s){
+  s = String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if(/[a-z]/.test(s)) s = s.replace(/[0-9@$!|+(]/g, c => LEET[c] || c);  // only treat digits as letters inside words
+  return s.replace(/[^a-z]/g,'');
+}
+function parseWords(str){ return String(str||'').split(',').map(w=>norm(w.trim())).filter(w=>w.length>=2); }
+
+const ALLOW = new Set(['shiitake','shiitakes','scunthorpe','cockatoo','cockatoos','penistone']);
+function isBad(n, custom){
+  if(!n || n.length<2 || ALLOW.has(n)) return false;
+  const v1=n.replace(/(.)\1{2,}/g,'$1'), v2=n.replace(/(.)\1{2,}/g,'$1$1'), v3=collapse(n);
+  for(const v of new Set([n,v1,v2])){
+    if(BAD_EXACT.has(v) || (v.length>3 && v.endsWith('s') && BAD_EXACT.has(v.slice(0,-1)))) return true;
+    if(BAD_CONTAINS.some(b=>v.includes(b))) return true;
+    if(custom.some(c=>v.startsWith(c))) return true;
+  }
+  if(v3!==n && (BAD_EXACT_C.has(v3) || BAD_CONTAINS_C.some(b=>v3.includes(b)))) return true;
+  return false;
+}
+
+const _cleanCache = new Map();
+function cleanText(text, custom=[]){
+  text = String(text||'');
+  const key = custom.join(',') + '\u0000' + text;
+  if(_cleanCache.has(key)) return _cleanCache.get(key);
+  let flagged = false;
+  // 1) spaced or dotted letters: "f u c k", "s.h.i.t"
+  let out = text.replace(/(^|\s)((?:[A-Za-z0-9@$!*][ ._\-]){2,}[A-Za-z0-9@$!*])(?=$|[\s,!?;:])/g, (m, pre, run) => {
+    if(isBad(norm(run.replace(/[ ._\-]/g,'')), custom)){ flagged=true; return pre + run.replace(/[^ ._\-]/g,'*'); }
+    return m;
+  });
+  // 2) individual words
+  out = out.replace(/[\p{L}\p{N}@$*+|!]+/gu, tok => {
+    const m = tok.match(/^(.*?)(!*)$/su); const core = m[1], tail = m[2];
+    if(!/[\p{L}\p{N}]/u.test(core)) return tok;
+    if(isBad(norm(core), custom)){ flagged=true; return core.replace(/./gsu,'*') + tail; }
+    return tok;
+  });
+  const res = {text:out, flagged};
+  if(_cleanCache.size > 600) _cleanCache.clear();
+  _cleanCache.set(key, res);
+  return res;
+}
+/*FILTER-END*/
+function cleanWith(meta, text){
+  if(meta && meta.filterOn === false) return {text:String(text||''), flagged:false};
+  return cleanText(text, parseWords(meta && meta.customWords));
+}
+
+/* ==================================================================
+   DATA STORE — Firebase Realtime Database, or localStorage demo
+   ================================================================== */
+function makeLocalStore(){
+  const KEY='tps-demo-db', subs=new Set();
+  const parts = p => String(p).split('/').filter(Boolean);
+  const read  = () => { try{ return JSON.parse(localStorage.getItem(KEY)) || {}; }catch{ return {}; } };
+  const getAt = (o,p) => parts(p).reduce((a,k)=> a==null ? undefined : a[k], o);
+  const setAt = (o,p,v) => {
+    const ks=parts(p); let cur=o;
+    for(let i=0;i<ks.length-1;i++){ if(typeof cur[ks[i]]!=='object' || cur[ks[i]]===null) cur[ks[i]]={}; cur=cur[ks[i]]; }
+    const last=ks[ks.length-1];
+    if(v===null || v===undefined) delete cur[last]; else cur[last]=JSON.parse(JSON.stringify(v));
+  };
+  function notify(){
+    const db=read();
+    subs.forEach(s=>{ const v=getAt(db,s.path) ?? null; const j=JSON.stringify(v); if(j!==s.last){ s.last=j; s.cb(v); } });
+  }
+  const write = db => { localStorage.setItem(KEY, JSON.stringify(db)); notify(); };
+  window.addEventListener('storage', e => { if(e.key===KEY) notify(); });
+  return {
+    demo:true, ready:Promise.resolve(), now:()=>Date.now(),
+    subscribe(path, cb){
+      const s={path, cb, last:undefined}; subs.add(s);
+      setTimeout(()=>{ if(!subs.has(s)) return; const v=getAt(read(),path) ?? null; const j=JSON.stringify(v); if(j!==s.last){ s.last=j; cb(v); } });
+      return ()=>subs.delete(s);
+    },
+    async get(path){ return getAt(read(),path) ?? null; },
+    async set(path,v){ const db=read(); setAt(db,path,v); write(db); },
+    async update(path,obj){ const db=read(); for(const [k,v] of Object.entries(obj)) setAt(db, path+'/'+k, v); write(db); },
+    async remove(path){ const db=read(); setAt(db,path,null); write(db); }
+  };
+}
+
+function makeFirebaseStore(cfg){
+  const load = src => new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('Could not load '+src)); document.head.appendChild(s); });
+  let db, offset=0;
+  const ready = (async()=>{
+    await load('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+    await load('https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js');
+    firebase.initializeApp(cfg); db = firebase.database();
+    db.ref('.info/serverTimeOffset').on('value', s => offset = s.val() || 0);
+  })();
+  const clean = o => JSON.parse(JSON.stringify(o, (k,v)=> v===undefined ? null : v));
+  return {
+    demo:false, ready, now:()=>Date.now()+offset,
+    subscribe(path, cb){ const r=db.ref(path); const h=s=>cb(s.val()); r.on('value',h); return ()=>r.off('value',h); },
+    async get(path){ return (await db.ref(path).get()).val(); },
+    set:(p,v)=>db.ref(p).set(clean(v)),
+    update:(p,o)=>db.ref(p).update(clean(o)),
+    remove:p=>db.ref(p).remove()
+  };
+}
+
+const store   = FIREBASE_CONFIG ? makeFirebaseStore(FIREBASE_CONFIG) : makeLocalStore();
+const idStore = store.demo ? sessionStorage : localStorage;   // demo: each tab is its own student
+const app     = $('#app');
+
+function defaultMeta(){
+  return { createdAt:store.now(), topic:'', phase:'lobby',
+    durations:{think:60, pair:120, write:180, share:120},
+    timer:{total:0, remaining:0, running:false, endsAt:0},
+    locked:false, filterOn:true, customWords:'', showNames:true, spotlight:null, round:1 };
+}
+function makeCode(){
+  const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  for(;;){ const c=[...rand(5)].map(x=>a[x%a.length]).join(''); if(!cleanText(c).flagged) return c; }
+}
+
+/* ==================================================================
+   LANDING
+   ================================================================== */
+function Landing(){
+  clearView(); setPhase('lobby'); setURL('');
+  app.innerHTML = `<div class="land">
+    <div><h1>Think · Pair · Share</h1><p class="muted">Think about it. Talk it out. Write it down. Share it.</p></div>
+    ${store.demo ? demoNote() : ''}
+    <div class="choices"><button id="bS" class="primary">I'm a student</button><button id="bT">I'm the teacher</button></div>
+  </div>${footer()}`;
+  $('#bS').onclick = () => StudentJoin('');
+  $('#bT').onclick = () => TeacherStart();
+}
+
+/* ==================================================================
+   TEACHER
+   ================================================================== */
+async function TeacherStart(){
+  clearView(); setPhase('lobby'); setURL('?teacher');
+  const saved = lsGet('tps-teacher');
+  const exists = saved && saved.room ? await store.get(R(saved.room)+'/meta') : null;
+  if(!exists) return createRoom();
+  app.innerHTML = `<div class="land"><div><h1>Welcome back</h1>
+    <p class="muted">You have a session open with code <span class="code">${esc(saved.room)}</span></p></div>
+    <div class="choices"><button class="primary" id="rRes">Resume ${esc(saved.room)}</button><button id="rNew">Start a new session</button></div>
+    <p class="muted small">Starting a new session ends the old one. Export it first if you want to keep the responses.</p></div>${footer()}`;
+  $('#rRes').onclick = () => Teacher(saved.room);
+  $('#rNew').onclick = async () => { await store.remove(R(saved.room)); createRoom(); };
+}
+
+async function createRoom(){
+  let code; for(let i=0;i<10;i++){ code=makeCode(); if(!(await store.get(R(code)+'/meta'))) break; }
+  await store.set(R(code)+'/meta', defaultMeta());
+  lsSet('tps-teacher', {room:code});
+  Teacher(code);
+}
+
+function Teacher(code){
+  clearView(); setURL('?teacher');
+  const base = R(code);
+  let room = {meta:null, students:{}, groups:{}, archive:{}};
+  const selected = new Set(), showRaw = new Set();
+  let dragging = false, lastChimeKey = '';
+  const prefs = Object.assign({auto:false, chime:true}, lsGet('tps-prefs') || {});
+
+  app.innerHTML = `
+  <header class="top">
+    <div class="logo">Think · Pair · <span>Share</span></div>
+    ${store.demo ? '<span class="badge">Demo mode</span>' : ''}
+    <div class="spacer"></div>
+    <span class="muted small">Join code</span><span class="code">${code}</span>
+    <button id="tCopy">Copy join link</button>
+    <button id="tPresent">Projector view ↗</button>
+    <button id="tCsv">Export CSV</button>
+    <button id="tEnd" class="danger">End session</button>
+  </header>
+  <div class="wrap grid-t">
+    <div class="stack">
+      <section class="card"><h2>Topic / prompt</h2>
+        <textarea id="tTopic" rows="4" maxlength="600" placeholder="e.g., Should schools allow AI tools on homework? Why or why not?"></textarea>
+        <div class="muted small" style="margin-top:6px">Students see changes instantly.</div>
+      </section>
+      <section class="card"><h2>Phase &amp; timer</h2>
+        <div class="phases" id="tPhases">${PHASE_ORDER.map(p=>`<button data-p="${p}">${PHASES[p].label}</button>`).join('')}</div>
+        <div class="timer" id="tTimer">0:00</div>
+        <div class="bar"><i id="tBar"></i></div>
+        <div class="row" style="justify-content:center;margin-top:12px">
+          <button id="tMinus">−30s</button><button id="tStart" class="primary" style="min-width:4.6em">Start</button><button id="tReset">Reset</button><button id="tPlus">+30s</button>
+        </div>
+        <label class="toggle" style="margin-top:12px"><input type="checkbox" id="pAuto"> Start the timer when I pick a phase</label>
+        <label class="toggle"><input type="checkbox" id="pChime"> Chime when time is up</label>
+        <h2 style="margin-top:14px">Phase lengths <span class="muted" style="text-transform:none;letter-spacing:0">(click a time to type it)</span></h2>
+        <div class="dur" id="tDur"></div>
+      </section>
+      <section class="card"><h2>Settings</h2>
+        <label class="toggle"><input type="checkbox" id="sLock"> Lock typing</label>
+        <label class="toggle"><input type="checkbox" id="sFilter"> Filter profanity</label>
+        <input id="sWords" class="small" placeholder="Extra words to block (comma separated)">
+        <label class="toggle"><input type="checkbox" id="sNames"> Show names when sharing</label>
+        <div class="row" style="margin-top:12px"><button id="tNewRound">New round</button><span class="muted small" id="tRound"></span></div>
+        <div class="muted small" style="margin-top:6px">New round saves responses to the export, clears them, and keeps the groups.</div>
+      </section>
+    </div>
+    <div>
+      <div id="tSpot"></div>
+      <section class="card" id="tBoard">
+        <div class="row"><h2 style="margin:0">Students <span id="tCount" class="muted"></span></h2><div class="spacer"></div>
+          <button id="gRandom" class="primary">Random pairs</button>
+          <button id="gMake" disabled>Group selected</button>
+          <button id="gClear">Clear groups</button></div>
+        <p class="muted small" style="margin:.6rem 0 0">Tap names to select them, then <b>Group selected</b> or <b>+ Add selected</b> on a group (that's how you add a third). On a computer you can also drag names. Odd class size? Random pairs makes one trio.</p>
+        <div class="tray" id="tTray"></div>
+        <div class="groups" id="tGroups"></div>
+      </section>
+    </div>
+  </div>${footer()}`;
+
+  const meta = () => room.meta;
+  const named = () => Object.fromEntries(Object.entries(room.students).filter(([,s])=>s && s.name));
+  const online = st => !!st && store.now() - (st.seen||0) < ONLINE_MS;
+  const savePrefs = () => lsSet('tps-prefs', prefs);
+  $('#pAuto').checked = prefs.auto; $('#pChime').checked = prefs.chime;
+  $('#pAuto').onchange = e => { prefs.auto = e.target.checked; savePrefs(); };
+  $('#pChime').onchange = e => { prefs.chime = e.target.checked; savePrefs(); if(prefs.chime) unlockAudio(); };
+
+  /* ---- live data ---- */
+  const unsub = store.subscribe(base, v => {
+    if(!v || !v.meta){ lsDel('tps-teacher'); Landing(); toast('Session ended.'); return; }
+    room = {meta:v.meta, students:v.students||{}, groups:v.groups||{}, archive:v.archive||{}};
+    for(const s of [...selected]) if(!named()[s]) selected.delete(s);
+    renderControls();
+    if(!dragging) renderBoard();
+  });
+  const iv = setInterval(tick, 250);
+  teardown.push(unsub, () => clearInterval(iv));
+
+  /* ---- controls ---- */
+  function setChk(sel, val){ const el=$(sel); if(el && document.activeElement!==el) el.checked = !!val; }
+  function renderControls(){
+    const m = meta(); setPhase(m.phase);
+    const ta = $('#tTopic'); if(document.activeElement!==ta && ta.value !== (m.topic||'')) ta.value = m.topic||'';
+    $$('#tPhases button').forEach(b => b.classList.toggle('on', b.dataset.p === m.phase));
+    $('#tStart').textContent = m.timer && m.timer.running ? 'Pause' : 'Start';
+    $('#tDur').innerHTML = TIMED.map(p => `<span>${PHASES[p].label}</span>
+      <button data-d="${p}" data-v="-15" aria-label="Shorter">−</button><b data-edit="${p}" title="Click to type a time">${fmt(m.durations[p])}</b><button data-d="${p}" data-v="15" aria-label="Longer">+</button>`).join('');
+    setChk('#sLock', m.locked); setChk('#sFilter', m.filterOn !== false); setChk('#sNames', m.showNames !== false);
+    const w = $('#sWords'); if(document.activeElement!==w) w.value = m.customWords||'';
+    $('#tRound').textContent = 'Round ' + (m.round||1);
+    tick();
+  }
+  function tick(){
+    const m = meta(); if(!m) return;
+    const t = m.timer || {}; const rem = remaining(t);
+    $('#tTimer').textContent = fmt(Math.ceil(rem));
+    const done = rem <= 0 && (t.total||0) > 0 && m.phase !== 'lobby';
+    $('#tTimer').classList.toggle('done', done);
+    $('#tBar').style.width = (t.total ? Math.max(0, Math.min(100, rem / t.total * 100)) : 0) + '%';
+    if(t.running && rem <= 0){
+      const key = String(t.endsAt);
+      if(lastChimeKey !== key){ lastChimeKey = key; if(prefs.chime) chime(); store.update(base+'/meta/timer', {running:false, remaining:0}); }
+    }
+  }
+
+  $('#tTopic').addEventListener('input', (()=>{ let t; return e => { clearTimeout(t); t=setTimeout(()=>store.update(base+'/meta',{topic:e.target.value}), 400); }; })());
+  $('#sWords').addEventListener('input', (()=>{ let t; return e => { clearTimeout(t); t=setTimeout(()=>store.update(base+'/meta',{customWords:e.target.value.slice(0,500)}), 600); }; })());
+  $('#sLock').onchange   = e => store.update(base+'/meta', {locked:e.target.checked});
+  $('#sFilter').onchange = e => store.update(base+'/meta', {filterOn:e.target.checked});
+  $('#sNames').onchange  = e => store.update(base+'/meta', {showNames:e.target.checked});
+
+  $('#tPhases').onclick = e => {
+    const b = e.target.closest('button[data-p]'); if(!b) return; unlockAudio();
+    const p = b.dataset.p, m = meta(), upd = {phase:p};
+    if(p === 'lobby') upd.timer = {total:0, remaining:0, running:false, endsAt:0};
+    else { const d = m.durations[p]; upd.timer = {total:d, remaining:d, running:prefs.auto, endsAt: prefs.auto ? store.now()+d*1000 : 0}; }
+    store.update(base+'/meta', upd);
+  };
+  $('#tStart').onclick = () => {
+    unlockAudio(); const m = meta(), t = m.timer || {};
+    if(t.running) return store.update(base+'/meta/timer', {running:false, remaining:Math.ceil(remaining(t))});
+    let r = t.remaining || 0;
+    if(r <= 0) r = m.durations[m.phase] || t.total || 60;
+    store.update(base+'/meta/timer', {running:true, endsAt:store.now()+r*1000, remaining:r, total:Math.max(t.total||0, r)});
+  };
+  $('#tReset').onclick = () => {
+    const m = meta(); const d = m.phase === 'lobby' ? 0 : (m.durations[m.phase] || 0);
+    store.update(base+'/meta/timer', {running:false, remaining:d, total:d, endsAt:0});
+  };
+  function adjust(d){
+    const t = meta().timer || {};
+    if(t.running){ store.update(base+'/meta/timer', {endsAt:Math.max(store.now(), t.endsAt + d*1000), total:Math.max(1,(t.total||0)+d)}); }
+    else { const r = Math.max(0, (t.remaining||0) + d); store.update(base+'/meta/timer', {remaining:r, total:Math.max(r, (t.total||0)+d)}); }
+  }
+  $('#tMinus').onclick = () => adjust(-30);
+  $('#tPlus').onclick  = () => adjust(30);
+  function setDuration(p, v){
+    const m = meta(); v = Math.max(5, Math.min(3600, v));
+    const upd = {['durations/'+p]: v};
+    if(m.phase === p && !(m.timer && m.timer.running)){ upd['timer/total'] = v; upd['timer/remaining'] = v; }
+    store.update(base+'/meta', upd);
+  }
+  $('#tDur').onclick = e => {
+    const b = e.target.closest('button[data-d]');
+    if(b){ const p=b.dataset.d; return setDuration(p, (meta().durations[p]||0) + Number(b.dataset.v)); }
+    const ed = e.target.closest('[data-edit]');
+    if(ed){ const p=ed.dataset.edit; const v=parseTime(prompt(`${PHASES[p].label} time (minutes, or m:ss)`, fmt(meta().durations[p]))); if(v) setDuration(p, v); }
+  };
+
+  /* ---- header buttons ---- */
+  $('#tCopy').onclick = async () => {
+    const url = joinURL(code);
+    try{ await navigator.clipboard.writeText(url); toast('Join link copied: ' + url); }catch{ prompt('Copy this join link:', url); }
+  };
+  $('#tPresent').onclick = () => window.open(location.pathname + '?present=' + code, 'tps-present');
+  $('#tEnd').onclick = async () => {
+    if(!confirm('End this session for everyone? Use Export CSV first if you want to keep the responses.')) return;
+    clearView(); lsDel('tps-teacher'); await store.remove(base); Landing();
+  };
+  $('#tCsv').onclick = () => {
+    const rows = [['Round','Topic','Group','Members','Response','Original (if filtered)','Flagged']];
+    const add = (round, topic, resps) => Object.values(resps||{}).sort((a,b)=>a.group-b.group).forEach(r => {
+      const c = cleanText(r.text||'', parseWords(meta().customWords));
+      rows.push([round, topic, 'Group '+r.group, r.names, c.text, c.flagged ? r.text : '', c.flagged ? 'yes' : '']);
+    });
+    Object.values(room.archive).sort((a,b)=>a.round-b.round).forEach(a => add(a.round, a.topic, a.responses));
+    add(meta().round||1, meta().topic||'', snapshotResponses());
+    const csv = '\ufeff' + rows.map(r => r.map(v => '"' + String(v ?? '').replace(/"/g,'""') + '"').join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+    a.download = `think-pair-share-${code}-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+  };
+  $('#tNewRound').onclick = async () => {
+    const m = meta(), r = m.round||1;
+    if(!confirm('Start a new round? Current responses are saved to the export and cleared. Groups stay the same.')) return;
+    const upd = {};
+    const snap = snapshotResponses();
+    if(Object.keys(snap).length) upd['archive/r'+r] = {round:r, topic:m.topic||'', at:store.now(), responses:snap};
+    for(const gid in room.groups){ upd[`groups/${gid}/raw`] = ''; upd[`groups/${gid}/updatedAt`] = 0; }
+    upd['meta/round'] = r + 1; upd['meta/spotlight'] = null; upd['meta/phase'] = 'think';
+    const d = m.durations.think; upd['meta/timer'] = {total:d, remaining:d, running:false, endsAt:0};
+    await store.update(base, upd);
+    toast(`Round ${r+1} started. Edit the topic if you need a new one.`);
+  };
+
+  function groupNames(g){ return sortedMembers(g).map(([,mm])=>mm.name).join(', '); }
+  function snapshotResponses(){
+    const out = {};
+    for(const [gid,g] of Object.entries(room.groups)) if(g.raw) out[gid] = {group:g.n||0, names:groupNames(g), text:g.raw};
+    return out;
+  }
+
+  /* ---- grouping ---- */
+  function nextN(gs){ return Math.max(0, ...Object.values(gs).map(g=>g.n||0)) + 1; }
+  function commitGroups(orig, gs, extra={}){
+    const upd = Object.assign({}, extra);
+    const alive = Object.entries(gs).filter(([,g]) => Object.keys(g.members||{}).length).sort((a,b)=>(a[1].n||0)-(b[1].n||0));
+    alive.forEach(([,g],i) => g.n = i+1);   // keep numbering tidy: Group 1..k
+    for(const gid of Object.keys(orig)) if(!alive.find(([id])=>id===gid)) upd['groups/'+gid] = null;
+    for(const [gid,g] of alive){
+      const mem = sortedMembers(g).map(([s])=>s);
+      if(!g.scribe || !g.members[g.scribe]) g.scribe = mem[0];
+      const o = orig[gid];
+      if(!o){ upd['groups/'+gid] = g; continue; }
+      if(JSON.stringify(o.members) !== JSON.stringify(g.members)) upd[`groups/${gid}/members`] = g.members;
+      if(o.scribe !== g.scribe) upd[`groups/${gid}/scribe`] = g.scribe;
+      if(o.n !== g.n) upd[`groups/${gid}/n`] = g.n;
+    }
+    if(Object.keys(upd).length) return store.update(base, upd);
+  }
+  function moveStudents(sids, target){
+    const studs = named();
+    sids = sids.filter(s => studs[s] || Object.values(room.groups).some(g => g.members && g.members[s]));
+    if(!sids.length) return;
+    const orig = room.groups, gs = JSON.parse(JSON.stringify(orig));
+    const nameOf = s => (studs[s] && studs[s].name) || (Object.values(orig).map(g=>g.members&&g.members[s]).find(Boolean)||{}).name || '?';
+    let tgt = target;
+    if(tgt && tgt !== '__new' && gs[tgt]){
+      const keep = Object.keys(gs[tgt].members||{}).filter(s => !sids.includes(s)).length;
+      if(keep + sids.length > MAX_GROUP){ toast(`A group can have at most ${MAX_GROUP} students.`); return; }
+    }
+    if(tgt === '__new' && sids.length > MAX_GROUP){ toast(`A group can have at most ${MAX_GROUP} students.`); return; }
+    for(const g of Object.values(gs)) for(const s of sids) if(g.members) delete g.members[s];
+    if(tgt === '__new'){ tgt = 'g' + uid(6); gs[tgt] = {n:nextN(gs), members:{}, raw:'', updatedAt:0}; }
+    if(tgt){ const g = gs[tgt]; if(!g) return; g.members = g.members || {}; let o = Date.now(); for(const s of sids) g.members[s] = {o:o++, name:nameOf(s)}; }
+    selected.clear();
+    commitGroups(orig, gs);
+  }
+  function kick(sid){
+    const orig = room.groups, gs = JSON.parse(JSON.stringify(orig));
+    for(const g of Object.values(gs)) if(g.members) delete g.members[sid];
+    selected.delete(sid);
+    commitGroups(orig, gs, {['students/'+sid]: null});
+  }
+  $('#gRandom').onclick = () => {
+    const ids = Object.keys(named());
+    if(ids.length < 2) return toast('Need at least 2 students to make pairs.');
+    if(Object.values(room.groups).some(g=>g.raw) && !confirm('Make new random groups? Current responses will be cleared (use New round or Export CSV first to keep them).')) return;
+    shuffle(ids);
+    const chunks = []; for(let i=0;i<ids.length;i+=2) chunks.push(ids.slice(i,i+2));
+    if(chunks.length > 1 && chunks[chunks.length-1].length === 1) chunks[chunks.length-2].push(chunks.pop()[0]);
+    const gs = {}, studs = named(); let o = Date.now();
+    chunks.forEach((c,i) => { gs['g'+uid(6)] = {n:i+1, scribe:c[0], raw:'', updatedAt:0, members:Object.fromEntries(c.map(s=>[s,{o:o++, name:studs[s].name}]))}; });
+    selected.clear();
+    store.update(base, {groups:gs, 'meta/spotlight':null});
+  };
+  $('#gMake').onclick = () => moveStudents([...selected], '__new');
+  $('#gClear').onclick = () => {
+    if(!Object.keys(room.groups).length) return;
+    if(!confirm('Remove all groups? Current responses will be cleared.')) return;
+    selected.clear(); store.update(base, {groups:null, 'meta/spotlight':null});
+  };
+
+  /* ---- spotlight ---- */
+  function snap(gid){ const g = room.groups[gid]; return {gid, n:g.n, names:groupNames(g), text:cleanWith(meta(), g.raw).text, at:store.now()}; }
+  function spotlight(gid){
+    if(!room.groups[gid]) return;
+    if(meta().spotlight && meta().spotlight.gid === gid) return store.update(base+'/meta', {spotlight:null});
+    store.update(base+'/meta', {spotlight:snap(gid)});
+  }
+  $('#tSpot').onclick = e => {
+    if(e.target.id === 'spStop') store.update(base+'/meta', {spotlight:null});
+    if(e.target.id === 'spRefresh'){ const sp = meta().spotlight; if(sp && room.groups[sp.gid]) store.update(base+'/meta', {spotlight:snap(sp.gid)}); }
+  };
+
+  /* ---- board ---- */
+  function chip(sid, g){
+    const studs = named(); let st = studs[sid], gone = false;
+    if(!st){ if(!g) return ''; st = {name:(g.members[sid]||{}).name || '?', seen:0}; gone = true; }
+    return `<span class="chip ${selected.has(sid)?'sel':''} ${gone?'gone':''}" draggable="true" data-sid="${sid}" title="${gone?'Left the session':''}">
+      <i class="dot ${online(st)?'on':''}"></i>${esc(st.name)}${gone?' (left)':''}${g && g.scribe===sid ? ' <span title="Typing for the group">✎</span>' : ''}
+      <button class="x" data-act="${g?'unassign':'kick'}" data-sid="${sid}" title="${g?'Remove from group':'Remove from session'}">×</button></span>`;
+  }
+  function groupCard(gid, g){
+    const mem = sortedMembers(g).map(([s])=>s), m = meta();
+    const c = cleanWith(m, g.raw||''), isSpot = m.spotlight && m.spotlight.gid === gid, raw = showRaw.has(gid);
+    const newOnes = [...selected].filter(s => !mem.includes(s));
+    const canAdd = newOnes.length > 0 && mem.length + newOnes.length <= MAX_GROUP;
+    return `<div class="gcard ${isSpot?'spot':''} ${c.flagged?'flag':''}" data-gid="${gid}">
+      <div class="ghead"><b>Group ${g.n||''}</b>${mem.length===3?'<span class="muted small">· trio</span>':''}<div class="spacer"></div>${c.flagged?'<span class="flagtag" title="Contains filtered words">filtered</span>':''}</div>
+      <div class="row">${mem.map(s=>chip(s,g)).join('')}</div>
+      <div class="resp ${g.raw?'':'empty'}">${g.raw ? esc(raw ? g.raw : c.text) : 'No response yet'}</div>
+      <div class="row">
+        <button data-act="spot" data-gid="${gid}" ${g.raw?'':'disabled'} class="${isSpot?'primary':''}">${isSpot?'Sharing ✓':'Share with class'}</button>
+        ${canAdd ? `<button data-act="add" data-gid="${gid}">+ Add selected</button>` : ''}
+        ${c.flagged ? `<button data-act="raw" data-gid="${gid}" class="small">${raw?'Hide original':'See original'}</button>` : ''}
+      </div></div>`;
+  }
+  function renderBoard(){
+    const studs = named(), ids = Object.keys(studs), m = meta();
+    $('#tCount').textContent = `${ids.length} / ${MAX_STUDENTS}`;
+    const inGroup = new Set(); for(const g of Object.values(room.groups)) for(const s of Object.keys(g.members||{})) inGroup.add(s);
+    const un = ids.filter(s => !inGroup.has(s)).sort((a,b)=>studs[a].name.localeCompare(studs[b].name));
+    $('#tTray').innerHTML = un.length ? un.map(s=>chip(s)).join('')
+      : `<span class="muted small">${ids.length ? 'Everyone is in a group. Drag or tap names here to unassign.' : `Waiting for students… they go to <b>${esc(joinShort())}</b> and enter code <b>${code}</b>.`}</span>`;
+    const glist = Object.entries(room.groups).filter(([,g])=>Object.keys(g.members||{}).length).sort((a,b)=>(a[1].n||0)-(b[1].n||0));
+    $('#tGroups').innerHTML = glist.map(([gid,g])=>groupCard(gid,g)).join('')
+      + (ids.length ? `<div class="gcard newg" data-gid="__new">${selected.size ? `<button data-act="make">Make a new group from ${selected.size} selected</button>` : 'Drop names here to start a new group'}</div>` : '');
+    const gm = $('#gMake'); gm.disabled = selected.size < 1 || selected.size > MAX_GROUP; gm.textContent = 'Group selected' + (selected.size ? ` (${selected.size})` : '');
+    const sp = m.spotlight;
+    $('#tSpot').innerHTML = sp ? `<div class="spotbar"><b>Sharing with the class:</b><span style="flex:1">Group ${sp.n}${m.showNames!==false ? ' — ' + esc(sp.names) : ' (names hidden)'}</span><button id="spRefresh" title="Re-share the group's latest text">Update text</button><button id="spStop">Stop sharing</button></div>` : '';
+  }
+
+  const board = $('#tBoard');
+  board.addEventListener('click', e => {
+    const act = e.target.closest('[data-act]');
+    if(act){
+      e.stopPropagation();
+      const a = act.dataset.act, sid = act.dataset.sid, gid = act.dataset.gid;
+      if(a === 'kick'){ const st = named()[sid]; if(confirm(`Remove ${st ? st.name : 'this student'} from the session?`)) kick(sid); }
+      else if(a === 'unassign') moveStudents([sid], null);
+      else if(a === 'add') moveStudents([...selected], gid);
+      else if(a === 'make') moveStudents([...selected], '__new');
+      else if(a === 'spot') spotlight(gid);
+      else if(a === 'raw'){ showRaw.has(gid) ? showRaw.delete(gid) : showRaw.add(gid); renderBoard(); }
+      return;
+    }
+    const ch = e.target.closest('.chip[data-sid]');
+    if(ch){ const s = ch.dataset.sid; selected.has(s) ? selected.delete(s) : selected.add(s); renderBoard(); }
+  });
+  board.addEventListener('dragstart', e => {
+    const ch = e.target.closest('.chip[data-sid]'); if(!ch) return;
+    dragging = true;
+    const sids = selected.has(ch.dataset.sid) ? [...selected] : [ch.dataset.sid];
+    e.dataTransfer.setData('text/plain', JSON.stringify(sids)); e.dataTransfer.effectAllowed = 'move';
+  });
+  board.addEventListener('dragend', () => { dragging = false; $$('.over').forEach(x=>x.classList.remove('over')); renderBoard(); });
+  board.addEventListener('dragover', e => {
+    const t = e.target.closest('.gcard,#tTray'); if(!t) return;
+    e.preventDefault(); $$('.over').forEach(x => x!==t && x.classList.remove('over')); t.classList.add('over');
+  });
+  board.addEventListener('drop', e => {
+    const t = e.target.closest('.gcard,#tTray'); if(!t) return;
+    e.preventDefault(); dragging = false;
+    let sids = []; try{ sids = JSON.parse(e.dataTransfer.getData('text/plain')); }catch{}
+    moveStudents(sids, t.id === 'tTray' ? null : t.dataset.gid);
+  });
+}
+
+/* ==================================================================
+   PROJECTOR VIEW (read-only)
+   ================================================================== */
+function Present(code){
+  clearView(); setURL('?present=' + code);
+  app.innerHTML = `<div class="present">
+    <div class="row"><div class="logo">Think · Pair · <span>Share</span></div><div class="spacer"></div>
+      <div class="pjoin">Join at <b>${esc(joinShort())}</b> · code <span class="code">${code}</span></div></div>
+    <div class="ptopic" id="pTopic"></div>
+    <div class="plabel" id="pLabel"></div>
+    <div class="pbig" id="pTime"></div>
+    <div id="pShare"></div>
+  </div>`;
+  let m = null;
+  const un = store.subscribe(R(code)+'/meta', v => {
+    if(!v){ app.innerHTML = `<div class="land"><h1>Session ended</h1><p class="muted">Code ${esc(code)} is no longer active.</p></div>`; m = null; return; }
+    m = v; setPhase(m.phase);
+    $('#pTopic').textContent = m.topic || '';
+    const sp = m.spotlight;
+    $('#pShare').innerHTML = sp ? `<div class="pshare"><div class="pwho">Group ${sp.n}${m.showNames!==false ? ' — ' + esc(sp.names) : ''}</div>${esc(sp.text)}</div>` : '';
+    tick();
+  });
+  function tick(){
+    if(!m || !$('#pTime')) return;
+    const el = $('#pTime'), lobby = m.phase === 'lobby';
+    $('#pLabel').textContent = lobby ? 'JOIN CODE' : PHASES[m.phase].label.toUpperCase();
+    el.classList.toggle('codeview', lobby);
+    el.classList.toggle('mini', !lobby && !!m.spotlight);
+    if(lobby){ el.textContent = code; el.classList.remove('done'); return; }
+    const t = m.timer || {}, rem = remaining(t);
+    el.textContent = fmt(Math.ceil(rem));
+    el.classList.toggle('done', rem <= 0 && (t.total||0) > 0);
+  }
+  const iv = setInterval(tick, 250);
+  teardown.push(un, () => clearInterval(iv));
+}
+
+/* ==================================================================
+   STUDENT
+   ================================================================== */
+async function StudentJoin(prefill){
+  clearView(); setPhase('lobby');
+  const saved = lsGet('tps-student', idStore);
+  if(saved && (!prefill || prefill === saved.room)){
+    const st = await store.get(R(saved.room)+'/students/'+saved.sid);
+    if(st && st.name) return Student(saved.room, saved.sid);
+  }
+  setURL('?room=' + (prefill||''));
+  app.innerHTML = `<div class="land">
+    <div><h1>Join class</h1><p class="muted">Enter the code on the board and your name.</p></div>
+    <form class="card joinform" id="jf">
+      <label>Class code<input id="jCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${esc(prefill||'')}"></label>
+      <label>Your name<input id="jName" maxlength="30" autocomplete="off" placeholder="First name and last initial"></label>
+      <button class="primary" type="submit" id="jBtn">Join</button>
+      <div class="warn" id="jErr" role="alert"></div>
+    </form>
+    ${store.demo ? demoNote() : ''}
+  </div>${footer()}`;
+  if(saved && saved.name) $('#jName').value = saved.name;
+  (prefill ? $('#jName') : $('#jCode')).focus();
+  const err = m => { $('#jErr').textContent = m; $('#jBtn').disabled = false; };
+  $('#jf').onsubmit = async e => {
+    e.preventDefault(); $('#jBtn').disabled = true; $('#jErr').textContent = '';
+    const code = $('#jCode').value.trim().toUpperCase();
+    const name = $('#jName').value.trim().replace(/\s+/g,' ');
+    if(!code) return err('Enter the class code.');
+    if(name.length < 2) return err('Enter your name.');
+    const meta = await store.get(R(code)+'/meta');
+    if(!meta) return err('No class found with that code. Check the board.');
+    if(cleanText(name, parseWords(meta.customWords)).flagged) return err('Please use your real name.');
+    const studs = await store.get(R(code)+'/students') || {};
+    const match = Object.entries(studs).find(([,s]) => s && s.name && s.name.toLowerCase() === name.toLowerCase());
+    let sid;
+    if(match){
+      if(store.now() - (match[1].seen||0) < ONLINE_MS) return err('Someone with that name is already here. Add your last initial.');
+      sid = match[0];   // rejoining on a new device or after closing the tab
+    } else {
+      if(Object.values(studs).filter(s=>s && s.name).length >= MAX_STUDENTS) return err(`This class is full (${MAX_STUDENTS} students).`);
+      sid = 's' + uid(8);
+    }
+    await store.update(R(code)+'/students/'+sid, {name, joinedAt:store.now(), seen:store.now()});
+    lsSet('tps-student', {room:code, sid, name}, idStore);
+    Student(code, sid);
+  };
+}
+
+function Student(code, sid){
+  clearView(); setURL('?room=' + code);
+  const base = R(code), notesKey = 'tps-notes-' + code;
+  let meta = null, groups = {}, myGid = null, pending = false, lastRound = null, ended = false;
+
+  app.innerHTML = `
+  <header class="top"><div class="logo">Think · Pair · <span>Share</span></div><div class="spacer"></div>
+    <span id="sName" class="muted small"></span><span class="code">${code}</span><button id="sLeave" class="small">Leave</button></header>
+  <div class="s-wrap">
+    <div class="phasebanner"><div class="pname" id="sPhase"></div><div class="ptip" id="sTip"></div><div class="ptime" id="sTime"></div></div>
+    <div id="sSpot"></div>
+    <section class="card"><h2>Topic</h2><div class="topic" id="sTopic"></div></section>
+    <section class="card"><h2>Your group</h2><div class="partners" id="sPartners"></div></section>
+    <section class="card"><h2>My private notes <span class="muted" style="text-transform:none;letter-spacing:0">(only on this device)</span></h2>
+      <textarea id="sNotes" rows="3" maxlength="1000" placeholder="Jot down your ideas before you talk…"></textarea></section>
+    <section class="card"><h2>Group response</h2>
+      <div id="sNone" class="muted">Your teacher will place you in a group.</div>
+      <div id="sEdit" hidden>
+        <textarea id="sResp" rows="6" maxlength="${MAX_CHARS}"></textarea>
+        <div class="row" style="margin-top:4px"><span class="status" id="sStatus"></span><div class="spacer"></div><span class="status" id="sCount"></span></div>
+        <div class="warn" id="sWarn"></div>
+      </div>
+      <div id="sView" hidden>
+        <div class="resp" id="sViewText"></div>
+        <div class="row" style="margin-top:8px"><span class="status" id="sViewWho"></span><div class="spacer"></div><button id="sTake">I'll type instead</button></div>
+      </div>
+    </section>
+  </div>${footer()}`;
+
+  const sResp = $('#sResp'), sNotes = $('#sNotes');
+  sNotes.value = lsGet(notesKey) || '';
+  sNotes.oninput = () => lsSet(notesKey, sNotes.value);
+
+  function endWith(msg){
+    if(ended) return; ended = true;
+    clearView(); lsDel('tps-student', idStore); setPhase('lobby');
+    app.innerHTML = `<div class="land"><h1>${esc(msg)}</h1><div><button class="primary" id="again">Join again</button></div></div>${footer()}`;
+    $('#again').onclick = () => StudentJoin('');
+  }
+
+  const u1 = store.subscribe(base+'/meta', v => { if(!v) return endWith('This session has ended.'); meta = v; render(); });
+  const u2 = store.subscribe(base+'/groups', v => { groups = v || {}; render(); });
+  const u3 = store.subscribe(base+'/students/'+sid, v => { if(!v || !v.name) return endWith('You were removed from the session.'); $('#sName').textContent = v.name; });
+  const beat = () => { if(!ended) store.update(base+'/students/'+sid, {seen:store.now()}); };
+  beat();
+  const hb = setInterval(beat, 20000), iv = setInterval(tick, 250);
+  teardown.push(u1, u2, u3, () => clearInterval(hb), () => clearInterval(iv));
+
+  function tick(){
+    if(!meta) return;
+    const t = meta.timer || {}, rem = remaining(t), el = $('#sTime');
+    if(meta.phase === 'lobby'){ el.textContent = ''; return; }
+    el.textContent = rem <= 0 && (t.total||0) > 0 ? 'Time!' : fmt(Math.ceil(rem));
+    el.classList.toggle('done', rem <= 0 && (t.total||0) > 0);
+  }
+
+  function render(){
+    if(!meta) return;
+    setPhase(meta.phase);
+    $('#sPhase').textContent = PHASES[meta.phase].label.toUpperCase();
+    $('#sTip').textContent = PHASES[meta.phase].tip;
+    $('#sTopic').textContent = meta.topic || 'Your teacher hasn’t posted the topic yet.';
+
+    if(lastRound !== null && meta.round !== lastRound){ sResp.value = ''; pending = false; }
+    lastRound = meta.round;
+
+    myGid = Object.keys(groups).find(id => groups[id].members && groups[id].members[sid]) || null;
+    const g = myGid ? groups[myGid] : null;
+    const mem = g ? sortedMembers(g) : [];
+    const scribe = g ? (g.members[g.scribe] ? g.scribe : (mem[0]||[])[0]) : null;
+    const others = mem.filter(([s]) => s !== sid);
+
+    $('#sPartners').innerHTML = g
+      ? `<span class="muted small" style="margin-right:4px">Group ${g.n||''} ·</span>` + (others.length
+          ? others.map(([,mm]) => `<span class="chip">${esc(mm.name)}</span>`).join('')
+          : '<span class="muted">Just you for now.</span>')
+      : '<span class="muted">Waiting for your teacher to place you with a partner.</span>';
+
+    const canType = !!g && (meta.phase === 'pair' || meta.phase === 'write') && !meta.locked;
+    $('#sNone').hidden = !!g;
+    $('#sEdit').hidden = !(g && scribe === sid);
+    $('#sView').hidden = !(g && scribe !== sid);
+
+    if(g && scribe === sid){
+      sResp.disabled = !canType;
+      sResp.placeholder = canType ? 'Type your group’s response… you are the typist for your group.'
+        : meta.locked ? 'Typing is locked by your teacher.' : 'Typing opens during Pair and Write.';
+      if(document.activeElement !== sResp && !pending && sResp.value !== (g.raw||'')) sResp.value = g.raw || '';
+      updateCount();
+    }
+    if(g && scribe !== sid){
+      const c = cleanWith(meta, g.raw||'');
+      const vt = $('#sViewText'); vt.textContent = g.raw ? c.text : 'Nothing typed yet.'; vt.classList.toggle('empty', !g.raw);
+      const sname = (g.members[scribe]||{}).name || 'Your partner';
+      $('#sViewWho').textContent = `${sname} is typing for your group.`;
+      $('#sTake').disabled = !canType;
+    }
+
+    const sp = meta.spotlight;
+    $('#sSpot').innerHTML = sp ? `<section class="card spotcard"><h2>Shared with the class</h2>
+      <div class="muted small" style="margin-bottom:6px">Group ${sp.n}${meta.showNames!==false ? ' — ' + esc(sp.names) : ''}${sp.gid===myGid ? ' (your group!)' : ''}</div>
+      <div class="topic" style="font-weight:500">${esc(sp.text)}</div></section>` : '';
+  }
+
+  function updateCount(){
+    $('#sCount').textContent = `${sResp.value.length} / ${MAX_CHARS}`;
+    $('#sWarn').textContent = meta && meta.filterOn !== false && cleanWith(meta, sResp.value).flagged
+      ? 'Some words aren’t school-appropriate. They will be hidden when your response is shown.' : '';
+  }
+  let saveT;
+  sResp.addEventListener('input', () => {
+    pending = true; $('#sStatus').textContent = 'Saving…'; updateCount();
+    clearTimeout(saveT); saveT = setTimeout(save, 500);
+  });
+  async function save(){
+    const gid = myGid; if(!gid || !groups[gid]) { pending = false; return; }
+    const upd = {raw:sResp.value.slice(0, MAX_CHARS), updatedAt:store.now(), by:sid};
+    if(groups[gid].scribe !== sid) upd.scribe = sid;
+    try{ await store.update(base+'/groups/'+gid, upd); $('#sStatus').textContent = 'Saved ✓'; }
+    catch{ $('#sStatus').textContent = 'Not saved — check your connection'; }
+    pending = false;
+  }
+  $('#sTake').onclick = () => { if(myGid) store.update(base+'/groups/'+myGid, {scribe:sid}); };
+  $('#sLeave').onclick = async () => {
+    if(!confirm('Leave this class session?')) return;
+    const gid = myGid; ended = true; clearView(); lsDel('tps-student', idStore);
+    const upd = {['students/'+sid]: null}; if(gid) upd[`groups/${gid}/members/${sid}`] = null;
+    await store.update(base, upd);
+    StudentJoin('');
+  };
+}
+
+/* ==================================================================
+   BOOT
+   ================================================================== */
+(async function boot(){
+  try{ await store.ready; }
+  catch(e){
+    app.innerHTML = `<div class="land card"><h1>Can't connect</h1><p>${esc(e.message)}</p>
+      <p class="muted">Check FIREBASE_CONFIG, and that the school network allows gstatic.com and firebaseio.com.</p></div>`;
+    return;
+  }
+  const params = new URLSearchParams(location.search);
+  if(params.has('present')) return Present(params.get('present').toUpperCase());
+  if(params.has('teacher')) return TeacherStart();
+  if(params.has('room'))    return StudentJoin((params.get('room')||'').toUpperCase());
+  Landing();
+})();
+</script>
+</body>
+</html>
