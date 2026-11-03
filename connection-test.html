@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Think-Pair-Share · Connection Test</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1d2330; --muted: #5d6778;
+    --line: #dfe3ea; --ok: #1f8a4c; --okbg: #e6f5ec; --bad: #b3261e; --badbg: #fbe9e7;
+    --warn: #8a5a00; --warnbg: #fff3d6; --wait: #5d6778; --waitbg: #eef0f4; --accent: #2457c5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--ink); line-height: 1.5; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 20px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 20px; margin-bottom: 18px; }
+  .card h2 { font-size: 17px; margin: 0 0 12px; }
+  .row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0;
+         border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: none; }
+  .badge { flex: 0 0 74px; text-align: center; font-size: 12px; font-weight: 600;
+           padding: 3px 0; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+  .wait { background: var(--waitbg); color: var(--wait); }
+  .ok { background: var(--okbg); color: var(--ok); }
+  .bad { background: var(--badbg); color: var(--bad); }
+  .warn { background: var(--warnbg); color: var(--warn); }
+  .label { font-weight: 600; }
+  .detail { color: var(--muted); font-size: 14px; word-break: break-word; }
+  button { font: inherit; font-weight: 600; border: none; border-radius: 10px; padding: 10px 16px;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: var(--waitbg); color: var(--ink); }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .uid { font-family: ui-monospace, Consolas, monospace; font-size: 15px; background: var(--waitbg);
+         padding: 10px 12px; border-radius: 8px; margin-top: 12px; word-break: break-all; display: none; }
+  .summary { font-size: 18px; font-weight: 600; padding: 14px 16px; border-radius: 10px; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 28px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Think-Pair-Share · Connection Test</h1>
+  <p class="sub">Open this page on a student device on student Wi-Fi. Every row should turn green or show the expected result.</p>
+
+  <div class="card">
+    <h2>Overall result</h2>
+    <div id="summary" class="summary wait">Running checks…</div>
+    <div class="actions">
+      <button id="rerun" class="secondary">Run again</button>
+      <button id="copy" class="secondary">Copy results</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Network checks</h2>
+    <div id="checks"></div>
+  </div>
+
+  <div class="card">
+    <h2>Teacher: get your UID</h2>
+    <p class="detail" style="margin:0">Only on your own device. Sign in with your district Google account and copy the UID below. It goes into the security rules so that only you can control sessions.</p>
+    <div class="actions">
+      <button id="google">Sign in with Google</button>
+      <button id="copyUid" class="secondary" disabled>Copy UID</button>
+    </div>
+    <div id="uid" class="uid"></div>
+    <div id="googleMsg" class="detail" style="margin-top:8px"></div>
+  </div>
+
+  <footer>Classroom tools · <a href="https://github.com/ap-csa-java">ap-csa-java</a></footer>
+</main>
+
+<script>
+  // Runs even if the Firebase SDK is blocked, so a blocked CDN still shows up as a clear failure.
+  window.__tpsSdkLoaded = false;
+  setTimeout(function () {
+    if (!window.__tpsSdkLoaded) {
+      var s = document.getElementById('summary');
+      s.className = 'summary bad';
+      s.textContent = 'Firebase could not load. www.gstatic.com is probably blocked on this network.';
+      document.getElementById('checks').innerHTML =
+        '<div class="row"><span class="badge bad">Fail</span><div><div class="label">Firebase SDK download</div>' +
+        '<div class="detail">Could not load scripts from www.gstatic.com within 10 seconds. Ask IT to allow www.gstatic.com, *.firebaseio.com, *.googleapis.com and *.firebaseapp.com.</div></div></div>';
+    }
+  }, 10000);
+</script>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+  import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+  import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
+
+  window.__tpsSdkLoaded = true;
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDlht7X2_SRvxS4XlaP7M3uqdHV4fK-2rU",
+    authDomain: "thinkpairshare-46da3.firebaseapp.com",
+    databaseURL: "https://thinkpairshare-46da3-default-rtdb.firebaseio.com",
+    projectId: "thinkpairshare-46da3",
+    storageBucket: "thinkpairshare-46da3.firebasestorage.app",
+    messagingSenderId: "293704713912",
+    appId: "1:293704713912:web:8924dc7f2817f4345ad64d"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+
+  const checksEl = document.getElementById('checks');
+  const results = [];
+
+  function addRow(label) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<span class="badge wait">Wait</span><div><div class="label"></div><div class="detail">Checking…</div></div>`;
+    row.querySelector('.label').textContent = label;
+    checksEl.appendChild(row);
+    const entry = { label, status: 'wait', detail: '' };
+    results.push(entry);
+    return (status, detail) => {
+      const b = row.querySelector('.badge');
+      b.className = 'badge ' + status;
+      b.textContent = { ok: 'Pass', bad: 'Fail', warn: 'Check', wait: 'Wait' }[status];
+      row.querySelector('.detail').textContent = detail;
+      entry.status = status; entry.detail = detail;
+    };
+  }
+
+  function withTimeout(promise, ms, msg) {
+    return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
+  }
+
+  function authHelp(code) {
+    if (code === 'auth/operation-not-allowed' || code === 'auth/admin-restricted-operation')
+      return 'Anonymous sign-in is turned off. In Firebase: Security → Authentication → Sign-in method → enable Anonymous.';
+    if (code === 'auth/network-request-failed')
+      return 'Could not reach identitytoolkit.googleapis.com. It is probably blocked on this network.';
+    if (code === 'auth/unauthorized-domain')
+      return 'This domain is not in Authentication → Settings → Authorized domains.';
+    return 'Error: ' + code;
+  }
+
+  async function runChecks() {
+    checksEl.innerHTML = '';
+    results.length = 0;
+    const summary = document.getElementById('summary');
+    summary.className = 'summary wait';
+    summary.textContent = 'Running checks…';
+
+    // 1. Page origin
+    const setOrigin = addRow('Page address');
+    const host = location.hostname;
+    if (host.endsWith('github.io') || host === 'localhost' || host === '127.0.0.1')
+      setOrigin('ok', location.origin);
+    else
+      setOrigin('warn', location.origin + ' is not github.io. Google sign-in only works on an authorized domain.');
+
+    const setSdk = addRow('Firebase SDK download');
+    setSdk('ok', 'Loaded from www.gstatic.com');
+
+    // 2. Anonymous auth
+    const setAuth = addRow('Student sign-in (anonymous)');
+    let user = auth.currentUser;
+    try {
+      if (!user) {
+        const t0 = performance.now();
+        const cred = await withTimeout(signInAnonymously(auth), 12000, 'timeout');
+        user = cred.user;
+        setAuth('ok', `Signed in in ${Math.round(performance.now() - t0)} ms (student ID ends …${user.uid.slice(-6)})`);
+      } else {
+        setAuth('ok', `Already signed in (ID ends …${user.uid.slice(-6)})`);
+      }
+    } catch (e) {
+      setAuth('bad', e.message === 'timeout' ? 'Timed out reaching Google sign-in servers.' : authHelp(e.code));
+    }
+
+    // 3. Live connection
+    const setLive = addRow('Live database connection');
+    try {
+      const t0 = performance.now();
+      await withTimeout(new Promise(res => {
+        const unsub = onValue(ref(db, '.info/connected'), snap => {
+          if (snap.val() === true) { unsub(); res(); }
+        });
+      }), 15000, 'timeout');
+      setLive('ok', `Connected to *.firebaseio.com in ${Math.round(performance.now() - t0)} ms`);
+    } catch (e) {
+      setLive('bad', 'Could not open a live connection to *.firebaseio.com within 15 seconds. It is probably blocked or the filter interferes with WebSockets.');
+    }
+
+    // 4. Clock
+    const setClock = addRow('Device clock');
+    try {
+      const offset = await withTimeout(new Promise(res => {
+        const unsub = onValue(ref(db, '.info/serverTimeOffset'), snap => { unsub(); res(snap.val() || 0); });
+      }), 8000, 'timeout');
+      const sec = Math.abs(offset / 1000);
+      if (sec < 5) setClock('ok', `Within ${sec.toFixed(1)} s of server time`);
+      else setClock('warn', `Device clock is off by ${sec.toFixed(0)} s. The app corrects for this automatically.`);
+    } catch (e) {
+      setClock('warn', 'Could not read server time.');
+    }
+
+    // 5. Rules round trip (locked database should refuse this write)
+    const setRules = addRow('Database security (write test)');
+    if (!user) {
+      setRules('warn', 'Skipped: needs student sign-in to pass first.');
+    } else {
+      const t0 = performance.now();
+      try {
+        await withTimeout(set(ref(db, `diagnostics/${user.uid}`), { t: Date.now() }), 12000, 'timeout');
+        setRules('warn', 'Write was ALLOWED. The database is not locked. Set the rules before using this with students.');
+      } catch (e) {
+        if (e.message === 'timeout') setRules('bad', 'No answer from the database within 12 seconds.');
+        else if (String(e.code || e.message).toLowerCase().includes('permission'))
+          setRules('ok', 'Server reached and refused the write, as expected while locked. Round trip ' + Math.round(performance.now() - t0) + ' ms.');
+        else setRules('bad', 'Unexpected error: ' + (e.code || e.message));
+      }
+    }
+
+    const anyBad = results.some(r => r.status === 'bad');
+    const anyWarn = results.some(r => r.status === 'warn');
+    if (anyBad) { summary.className = 'summary bad'; summary.textContent = 'Something is blocked. See the red rows below.'; }
+    else if (anyWarn) { summary.className = 'summary warn'; summary.textContent = 'Works, with notes. See the yellow rows below.'; }
+    else { summary.className = 'summary ok'; summary.textContent = 'All clear. Think-Pair-Share will work on this device and network.'; }
+  }
+
+  // Teacher Google sign-in
+  const uidEl = document.getElementById('uid');
+  const copyUidBtn = document.getElementById('copyUid');
+  const googleMsg = document.getElementById('googleMsg');
+
+  function showUid(u) {
+    if (u && !u.isAnonymous) {
+      uidEl.style.display = 'block';
+      uidEl.textContent = u.uid;
+      copyUidBtn.disabled = false;
+      googleMsg.textContent = `Signed in as ${u.email || 'Google account'}. This is your teacher UID.`;
+    }
+  }
+  onAuthStateChanged(auth, showUid);
+
+  document.getElementById('google').addEventListener('click', async () => {
+    googleMsg.textContent = 'Opening Google sign-in…';
+    try {
+      const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+      showUid(cred.user);
+    } catch (e) {
+      if (e.code === 'auth/operation-not-allowed')
+        googleMsg.textContent = 'Google sign-in is turned off. Enable it under Security → Authentication → Sign-in method.';
+      else if (e.code === 'auth/popup-blocked')
+        googleMsg.textContent = 'The browser blocked the pop-up. Allow pop-ups for this site and try again.';
+      else googleMsg.textContent = authHelp(e.code);
+    }
+  });
+
+  copyUidBtn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(uidEl.textContent); copyUidBtn.textContent = 'Copied'; }
+    catch { copyUidBtn.textContent = 'Select and copy manually'; }
+    setTimeout(() => copyUidBtn.textContent = 'Copy UID', 2000);
+  });
+
+  document.getElementById('copy').addEventListener('click', async () => {
+    const lines = [
+      'TPS connection test · ' + new Date().toLocaleString(),
+      'Page: ' + location.href,
+      'Browser: ' + navigator.userAgent,
+      ...results.map(r => `[${r.status.toUpperCase()}] ${r.label}: ${r.detail}`)
+    ];
+    const btn = document.getElementById('copy');
+    try { await navigator.clipboard.writeText(lines.join('\n')); btn.textContent = 'Copied'; }
+    catch { btn.textContent = 'Copy failed'; }
+    setTimeout(() => btn.textContent = 'Copy results', 2000);
+  });
+
+  document.getElementById('rerun').addEventListener('click', runChecks);
+  runChecks();
+</script>
+</body>
+</html>
