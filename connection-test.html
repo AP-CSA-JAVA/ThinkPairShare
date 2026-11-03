@@ -185,8 +185,9 @@
     try {
       const t0 = performance.now();
       await withTimeout(new Promise(res => {
-        const unsub = onValue(ref(db, '.info/connected'), snap => {
-          if (snap.val() === true) { unsub(); res(); }
+        let unsub = null, done = false;
+        unsub = onValue(ref(db, '.info/connected'), snap => {
+          if (snap.val() === true && !done) { done = true; res(); setTimeout(() => unsub && unsub(), 0); }
         });
       }), 15000, 'timeout');
       setLive('ok', `Connected to *.firebaseio.com in ${Math.round(performance.now() - t0)} ms`);
@@ -198,7 +199,7 @@
     const setClock = addRow('Device clock');
     try {
       const offset = await withTimeout(new Promise(res => {
-        const unsub = onValue(ref(db, '.info/serverTimeOffset'), snap => { unsub(); res(snap.val() || 0); });
+        onValue(ref(db, '.info/serverTimeOffset'), snap => res(snap.val() || 0), { onlyOnce: true });
       }), 8000, 'timeout');
       const sec = Math.abs(offset / 1000);
       if (sec < 5) setClock('ok', `Within ${sec.toFixed(1)} s of server time`);
