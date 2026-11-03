@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Think-Pair-Share · Projector</title>
+<link rel="stylesheet" href="tps.css">
+<style>
+  body { background: #fff; }
+  .stage { min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
+           padding: 4vh 6vw; gap: 3vh; }
+  .top { display: flex; justify-content: space-between; align-items: center; }
+  .phase { font-size: 3vh; font-weight: 700; padding: .3em 1em; border-radius: 999px; }
+  .phase.think { background: var(--think-bg); color: var(--think); }
+  .phase.pair { background: var(--pair-bg); color: var(--pair); }
+  .phase.share { background: var(--share-bg); color: var(--share); }
+  .phase.lobby { background: #eef0f4; color: var(--muted); }
+  .clock { font-size: 9vh; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .bigprompt { font-size: 5.5vh; font-weight: 700; line-height: 1.3; white-space: pre-wrap; }
+  .stat { font-size: 3.5vh; color: var(--muted); }
+  .joincode { font-size: 18vh; font-weight: 900; letter-spacing: .15em; line-height: 1; }
+  .joinurl { font-size: 3.4vh; color: var(--muted); word-break: break-all; }
+  .spotbox { font-size: 5vh; line-height: 1.35; white-space: pre-wrap; border-left: 1.2vh solid var(--share);
+             padding: 2vh 3vw; background: var(--share-bg); border-radius: 0; }
+  .who { font-size: 3vh; color: var(--share); font-weight: 700; }
+  .msg { font-size: 4vh; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage"><div class="msg">Connecting...</div></div>
+
+<script type="module">
+import { auth, sRef, onValue, signInAnonymously, firstUser, esc, fmtTime, now, normCode, pageUrl, PHASE_LABEL } from "./tps-core.js";
+
+const stage = document.getElementById("stage");
+const code = normCode(new URLSearchParams(location.search).get("s"));
+if (code.length !== 4) {
+  stage.innerHTML = '<div class="msg">Open this from the teacher dashboard (Projector view).</div>';
+  throw new Error("no code");
+}
+if (!(await firstUser())) await signInAnonymously(auth);
+
+let S = null;
+onValue(sRef(code), s => { S = s.val(); render(); });
+setInterval(() => { const c = document.getElementById("clock"); if (c) c.textContent = clockText(); }, 250);
+
+function clockText() {
+  const e = S?.meta?.endsAt;
+  if (!e) return "";
+  const left = e - now();
+  return left > 0 ? fmtTime(left) : "Time!";
+}
+const students = () => Object.values(S?.students || {}).filter(s => s?.name);
+
+function render() {
+  if (!S?.meta || S.meta.phase === "ended") {
+    stage.innerHTML = '<div class="msg">Session ended. Thanks for sharing your thinking!</div>'; return;
+  }
+  const m = S.meta, p = m.phase;
+  const top = `<div class="top"><span class="phase ${p}">${PHASE_LABEL[p]}</span><span class="clock" id="clock">${clockText()}</span></div>`;
+  if (p === "lobby") {
+    stage.innerHTML = `${top}
+      <div class="stat">Join at</div>
+      <div class="joinurl">${esc(pageUrl("join.html"))}</div>
+      <div class="joincode">${esc(code)}</div>
+      <div class="stat">${students().length} joined</div>`;
+  } else if (p === "think") {
+    const ids = Object.keys(S.students || {}).filter(id => S.students[id]?.name);
+    const done = ids.filter(id => S.think?.[id]?.done).length;
+    stage.innerHTML = `${top}<div class="bigprompt">${esc(m.prompt)}</div>
+      <div class="stat">Think on your own · ${done} / ${ids.length} submitted</div>
+      <div class="stat small">Joining late? Code <b>${esc(code)}</b></div>`;
+  } else if (p === "pair") {
+    const g = Object.keys(S.groups || {});
+    const done = g.filter(x => S.pair?.[x]?.done).length;
+    stage.innerHTML = `${top}<div class="bigprompt">${esc(m.prompt)}</div>
+      <div class="stat">Talk it over and write one answer together · ${done} / ${g.length} groups submitted</div>`;
+  } else if (p === "share") {
+    const spot = m.spotlight && S.pair?.[m.spotlight];
+    if (spot) {
+      const gids = Object.keys(S.groups || {}).sort();
+      const names = Object.keys(S.groups?.[m.spotlight]?.members || {}).map(id => S.students?.[id]?.name).filter(Boolean);
+      const who = m.showNames && names.length ? names.join(", ") : `Group ${gids.indexOf(m.spotlight) + 1}`;
+      stage.innerHTML = `${top}<div class="stat">${esc(m.prompt)}</div>
+        <div class="who">${esc(who)}</div><div class="spotbox">${esc(spot.text || "")}</div>`;
+    } else {
+      stage.innerHTML = `${top}<div class="bigprompt">${esc(m.prompt)}</div>
+        <div class="stat">Read your classmates' answers and click Agree on the strongest ones.</div>`;
+    }
+  }
+}
+</script>
+</body>
+</html>

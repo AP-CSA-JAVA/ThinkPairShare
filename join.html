@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Think-Pair-Share</title>
+<link rel="stylesheet" href="tps.css">
+</head>
+<body>
+<main>
+  <div class="row spread" style="margin-bottom:14px">
+    <h1>Think-Pair-Share</h1>
+    <span id="phasePill" class="pill hidden"></span>
+  </div>
+
+  <!-- Join -->
+  <section id="vJoin" class="card hidden">
+    <h2>Join a session</h2>
+    <label for="code">Session code</label>
+    <input id="code" type="text" maxlength="4" autocomplete="off" placeholder="K7Q2"
+           style="text-transform:uppercase;letter-spacing:.2em;font-size:22px">
+    <label for="name">Your name</label>
+    <input id="name" type="text" maxlength="30" autocomplete="off" placeholder="First name and last initial">
+    <div class="err" id="joinErr"></div>
+    <button id="joinBtn" style="margin-top:6px">Join</button>
+  </section>
+
+  <!-- Lobby -->
+  <section id="vLobby" class="card hidden">
+    <h2>You're in, <span id="lobbyName"></span>!</h2>
+    <p class="muted">Waiting for your teacher to start. Keep this page open.</p>
+  </section>
+
+  <!-- Think -->
+  <section id="vThink" class="card phase-think hidden">
+    <div class="row spread"><span class="pill think">Think on your own</span><span class="timer" id="thinkTimer"></span></div>
+    <p class="prompt" id="thinkPrompt" style="margin-top:12px"></p>
+    <label for="thinkText">Your thinking</label>
+    <textarea id="thinkText" placeholder="Write your own ideas first..."></textarea>
+    <div class="row spread" style="margin-top:8px">
+      <span class="small muted" id="thinkStatus"></span>
+      <button id="thinkSubmit">Submit</button>
+    </div>
+    <div class="err" id="thinkErr"></div>
+  </section>
+
+  <!-- Pair -->
+  <section id="vPair" class="card phase-pair hidden">
+    <div class="row spread"><span class="pill pair">Pair up</span><span class="timer" id="pairTimer"></span></div>
+    <p class="prompt" id="pairPrompt" style="margin-top:12px"></p>
+    <div id="pairWaiting" class="muted hidden">Hang tight. Your teacher is putting you in a group.</div>
+    <div id="pairBody" class="hidden">
+      <p><b>Your group:</b> <span id="pairNames"></span></p>
+      <div id="partnerThinks"></div>
+      <h3 style="margin-top:14px">Your group's answer</h3>
+      <p class="small muted" id="penNote"></p>
+      <textarea id="pairText" class="hidden" placeholder="Combine your best ideas..."></textarea>
+      <div id="pairView" class="answer hidden"></div>
+      <div class="row spread" style="margin-top:8px">
+        <button id="takePen" class="secondary hidden">Take the pen</button>
+        <span class="grow"></span>
+        <span class="small muted" id="pairStatus"></span>
+        <button id="pairSubmit" class="hidden">Submit group answer</button>
+      </div>
+      <div class="err" id="pairErr"></div>
+    </div>
+  </section>
+
+  <!-- Share -->
+  <section id="vShare" class="hidden">
+    <div class="card phase-share">
+      <span class="pill share">Share</span>
+      <p class="prompt" id="sharePrompt" style="margin-top:12px"></p>
+      <div id="spotlight" class="hidden" style="margin-top:12px">
+        <h3 id="spotTitle">In the spotlight</h3>
+        <div class="answer" id="spotText" style="font-size:18px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>All group answers</h2>
+      <p class="small muted">Click Agree on answers you think are strong. You can't vote for your own group.</p>
+      <div id="shareList"></div>
+      <div class="err" id="shareErr"></div>
+    </div>
+  </section>
+
+  <!-- Ended -->
+  <section id="vEnded" class="card hidden">
+    <h2>Session ended</h2>
+    <p class="muted">Thanks for sharing your thinking!</p>
+    <button id="again" class="secondary">Join another session</button>
+  </section>
+
+  <section id="vLoading" class="card"><p class="muted">Connecting...</p></section>
+
+  <footer>Classroom tools · <a href="https://github.com/ap-csa-java">ap-csa-java</a></footer>
+</main>
+
+<script type="module">
+import {
+  auth, sRef, onValue, set, update, get, onDisconnect, signInAnonymously,
+  esc, fmtTime, now, normCode, firstUser, PHASE_LABEL
+} from "./tps-core.js";
+
+const $ = id => document.getElementById(id);
+const views = ["vJoin", "vLobby", "vThink", "vPair", "vShare", "vEnded", "vLoading"];
+const show = v => views.forEach(x => $(x).classList.toggle("hidden", x !== v));
+
+let uid = null, code = null, myName = "";
+let meta = null, groups = {}, students = {};
+let unsubs = [];          // session listeners
+let phaseUnsubs = [];     // listeners that belong to one phase
+let thinkTimer = null, pairTimer = null, tick = null;
+let thinkDone = false, thinkLoaded = false;
+let presence = null;
+let lastPhase = null, lastRound = null;
+let myGid = null, pairData = null, partnerKey = "";
+let pairSaveTimer = null;
+let shareState = { pair: {}, votes: {} };
+
+function clearPhaseListeners() { phaseUnsubs.forEach(u => u()); phaseUnsubs = []; }
+function clearAll() { clearPhaseListeners(); unsubs.forEach(u => u()); unsubs = []; }
+
+// ---------- sign in ----------
+let user = await firstUser();
+if (!user) {
+  try { user = (await signInAnonymously(auth)).user; }
+  catch (e) { $("vLoading").innerHTML = '<p class="err">Could not connect. Check your internet and refresh.</p>'; throw e; }
+}
+uid = user.uid;
+
+// ---------- join ----------
+const params = new URLSearchParams(location.search);
+const saved = JSON.parse(localStorage.getItem("tps_join") || "null");
+$("code").value = normCode(params.get("s") || saved?.code || "");
+$("name").value = saved?.name || "";
+
+// Rejoin automatically after a refresh.
+if (saved && (!params.get("s") || normCode(params.get("s")) === saved.code)) {
+  const [m, me] = await Promise.all([get(sRef(saved.code, "meta")), get(sRef(saved.code, `students/${uid}`))]);
+  if (m.exists() && m.val().phase !== "ended" && me.exists()) enterSession(saved.code, me.val().name);
+  else show("vJoin");
+} else show("vJoin");
+
+$("code").addEventListener("input", () => { $("code").value = normCode($("code").value); $("joinErr").textContent = ""; });
+$("name").addEventListener("input", () => { $("joinErr").textContent = ""; });
+$("joinBtn").addEventListener("click", doJoin);
+$("name").addEventListener("keydown", e => { if (e.key === "Enter") doJoin(); });
+
+async function doJoin() {
+  const c = normCode($("code").value), n = $("name").value.trim().replace(/\s+/g, " ");
+  if (c.length !== 4) { $("joinErr").textContent = "Enter the 4-character code on the board."; return; }
+  if (!n) { $("joinErr").textContent = "Enter your name."; return; }
+  $("joinBtn").disabled = true;
+  try {
+    const m = await get(sRef(c, "meta"));
+    if (!m.exists()) { $("joinErr").textContent = "No session with that code. Check the board."; return; }
+    if (m.val().phase === "ended") { $("joinErr").textContent = "That session has ended."; return; }
+    await set(sRef(c, `students/${uid}`), { name: n, joinedAt: now(), online: true });
+    enterSession(c, n);
+  } catch (e) {
+    $("joinErr").textContent = "Could not join. Try again.";
+  } finally { $("joinBtn").disabled = false; }
+}
+
+function enterSession(c, n) {
+  code = c; myName = n;
+  localStorage.setItem("tps_join", JSON.stringify({ code, name: n }));
+  history.replaceState(null, "", `?s=${code}`);
+  $("lobbyName").textContent = n;
+
+  presence = onDisconnect(sRef(code, `students/${uid}/online`));
+  presence.set(false);
+  set(sRef(code, `students/${uid}/online`), true).catch(() => {});
+
+  unsubs.push(onValue(sRef(code, "meta"), s => { meta = s.val(); render(); }));
+  unsubs.push(onValue(sRef(code, "groups"), s => { groups = s.val() || {}; if (meta?.phase === "pair") renderPair(); }));
+  unsubs.push(onValue(sRef(code, "students"), s => {
+    students = s.val() || {};
+    if (meta && !students[uid] && meta.phase !== "ended") kicked();
+    else if (meta?.phase === "pair") renderPair();
+  }));
+  clearInterval(tick);
+  tick = setInterval(updateTimers, 250);
+}
+
+function kicked() {
+  clearAll(); presence?.cancel();
+  localStorage.removeItem("tps_join");
+  show("vJoin");
+  $("joinErr").textContent = "You were removed from the session. You can join again.";
+}
+
+// ---------- render by phase ----------
+function render() {
+  if (!meta) {   // session deleted
+    leaveSession(); return;
+  }
+  const p = meta.phase;
+  if ((meta.round || 1) !== lastRound) { resetRound(); lastRound = meta.round || 1; }
+  const pill = $("phasePill");
+  pill.textContent = PHASE_LABEL[p] || p;
+  pill.className = `pill ${p}`;
+  if (p !== lastPhase) { clearPhaseListeners(); lastPhase = p; enterPhase(p); }
+  $("thinkPrompt").textContent = $("pairPrompt").textContent = $("sharePrompt").textContent = meta.prompt || "";
+  updateTimers();
+  if (p === "share") renderShare();
+}
+
+function resetRound() {
+  if (lastRound === null) return;           // first load, nothing to reset
+  clearPhaseListeners(); lastPhase = null;
+  clearTimeout(thinkTimer); thinkTimer = null; clearTimeout(pairSaveTimer); pairSaveTimer = null;
+  $("thinkText").value = ""; thinkDone = false; thinkLoaded = false;
+  $("pairText").value = ""; myGid = null; partnerKey = ""; pairData = null;
+}
+
+function leaveSession() {
+  clearAll(); presence?.cancel(); clearInterval(tick);
+  localStorage.removeItem("tps_join");
+  $("phasePill").classList.add("hidden");
+  show("vEnded");
+}
+
+function enterPhase(p) {
+  if (p === "lobby") { show("vLobby"); }
+  else if (p === "think") { startThink(); }
+  else if (p === "pair") { flushThink(); show("vPair"); renderPair(); }
+  else if (p === "share") { flushPair(); startShare(); }
+  else if (p === "ended") { leaveSession(); }
+}
+
+function updateTimers() {
+  if (!meta) return;
+  const left = meta.endsAt ? meta.endsAt - now() : null;
+  const txt = left == null ? "" : left > 0 ? fmtTime(left) : "Time!";
+  $("thinkTimer").textContent = $("pairTimer").textContent = txt;
+}
+
+// ---------- think ----------
+async function startThink() {
+  show("vThink");
+  $("thinkErr").textContent = "";
+  if (!thinkLoaded) {
+    const s = await get(sRef(code, `think/${uid}`));
+    const v = s.val();
+    if (v && !$("thinkText").value) { $("thinkText").value = v.text || ""; thinkDone = !!v.done; }
+    thinkLoaded = true;
+  }
+  $("thinkText").disabled = false;
+  thinkStatus();
+}
+function thinkStatus() {
+  $("thinkStatus").textContent = thinkDone ? "Submitted. You can still edit until your teacher moves on." : "Saves as you type.";
+  $("thinkSubmit").textContent = thinkDone ? "Submitted" : "Submit";
+  $("thinkSubmit").disabled = thinkDone;
+}
+function saveThink() {
+  clearTimeout(thinkTimer); thinkTimer = null;
+  if (meta?.phase !== "think") return Promise.resolve();
+  return set(sRef(code, `think/${uid}`), { text: $("thinkText").value.slice(0, 2000), done: thinkDone, at: now() })
+    .then(() => { $("thinkErr").textContent = ""; })
+    .catch(() => { $("thinkErr").textContent = "Couldn't save. Your teacher may have moved on."; });
+}
+function flushThink() { if (thinkTimer) saveThink(); }
+$("thinkText").addEventListener("input", () => { clearTimeout(thinkTimer); thinkTimer = setTimeout(saveThink, 600); });
+$("thinkSubmit").addEventListener("click", () => {
+  if (!$("thinkText").value.trim()) { $("thinkErr").textContent = "Write something before you submit."; return; }
+  thinkDone = true; thinkStatus(); saveThink();
+});
+
+// ---------- pair ----------
+function findGroup() {
+  for (const [gid, g] of Object.entries(groups)) if (g?.members?.[uid]) return gid;
+  return null;
+}
+function nameOf(id) { return students[id]?.name || "Classmate"; }
+
+function renderPair() {
+  if (meta?.phase !== "pair") return;
+  const gid = findGroup();
+  $("pairWaiting").classList.toggle("hidden", !!gid);
+  $("pairBody").classList.toggle("hidden", !gid);
+  if (!gid) { if (myGid) { clearPhaseListeners(); myGid = null; partnerKey = ""; } return; }
+
+  const members = Object.keys(groups[gid].members);
+  const partners = members.filter(m => m !== uid);
+  $("pairNames").textContent = members.map(m => m === uid ? `${nameOf(m)} (you)` : nameOf(m)).join(", ");
+
+  const key = gid + ":" + partners.join(",");
+  if (key !== partnerKey) {
+    clearPhaseListeners();
+    myGid = gid; partnerKey = key; pairData = null;
+    const box = $("partnerThinks");
+    box.innerHTML = partners.length ? "" : '<p class="muted">You\'re working solo this round.</p>';
+    partners.forEach(p => {
+      const div = document.createElement("div");
+      div.style.marginTop = "10px";
+      div.innerHTML = `<h3>${esc(nameOf(p))} thought:</h3><div class="answer empty">Nothing written.</div>`;
+      box.appendChild(div);
+      phaseUnsubs.push(onValue(sRef(code, `think/${p}`), s => {
+        const t = s.val()?.text?.trim();
+        const a = div.querySelector(".answer");
+        a.textContent = t || "Nothing written.";
+        a.classList.toggle("empty", !t);
+      }));
+    });
+    phaseUnsubs.push(onValue(sRef(code, `pair/${gid}`), s => { pairData = s.val() || {}; renderPen(); }));
+  }
+}
+
+function renderPen() {
+  const scribe = pairData?.scribe;
+  const mine = scribe === uid;
+  const ta = $("pairText");
+  if (mine && ta.classList.contains("hidden")) ta.value = pairData.text || "";
+  ta.classList.toggle("hidden", !mine);
+  $("pairView").classList.toggle("hidden", mine);
+  const t = (pairData?.text || "").trim();
+  $("pairView").textContent = t || "Nothing written yet.";
+  $("pairView").classList.toggle("empty", !t);
+  $("penNote").textContent = mine
+    ? "You have the pen. Talk it over with your group and type your combined answer."
+    : `${scribe ? nameOf(scribe) : "A group member"} has the pen. Talk it over while they type.`;
+  $("takePen").classList.toggle("hidden", mine);
+  $("pairSubmit").classList.toggle("hidden", !mine);
+  $("pairSubmit").disabled = !!pairData?.done;
+  $("pairSubmit").textContent = pairData?.done ? "Submitted" : "Submit group answer";
+  $("pairStatus").textContent = pairData?.done ? "Group answer submitted." : "";
+}
+
+function savePair(extra = {}) {
+  clearTimeout(pairSaveTimer); pairSaveTimer = null;
+  if (!myGid || meta?.phase !== "pair") return Promise.resolve();
+  return update(sRef(code, `pair/${myGid}`), { text: $("pairText").value.slice(0, 3000), at: now(), ...extra })
+    .then(() => { $("pairErr").textContent = ""; })
+    .catch(() => { $("pairErr").textContent = "Couldn't save. Your teacher may have moved on."; });
+}
+function flushPair() { if (pairSaveTimer) savePair(); }
+$("pairText").addEventListener("input", () => { clearTimeout(pairSaveTimer); pairSaveTimer = setTimeout(savePair, 600); });
+$("takePen").addEventListener("click", () => {
+  if (!myGid) return;
+  update(sRef(code, `pair/${myGid}`), { scribe: uid }).catch(() => { $("pairErr").textContent = "Couldn't take the pen."; });
+});
+$("pairSubmit").addEventListener("click", () => {
+  if (!$("pairText").value.trim()) { $("pairErr").textContent = "Write your group's answer before you submit."; return; }
+  savePair({ done: true });
+});
+
+// ---------- share ----------
+function startShare() {
+  show("vShare");
+  phaseUnsubs.push(onValue(sRef(code, "pair"), s => { shareState.pair = s.val() || {}; renderShare(); }));
+  phaseUnsubs.push(onValue(sRef(code, "votes"), s => { shareState.votes = s.val() || {}; renderShare(); }));
+  renderShare();
+}
+function groupLabel(gid, i) {
+  const members = Object.keys(groups[gid]?.members || {});
+  return meta?.showNames ? members.map(nameOf).join(", ") : `Group ${i + 1}`;
+}
+function renderShare() {
+  if (meta?.phase !== "share") return;
+  const gids = Object.keys(groups).sort();
+  const mine = findGroup();
+  const spot = meta.spotlight;
+  $("spotlight").classList.toggle("hidden", !spot || !shareState.pair[spot]);
+  if (spot && shareState.pair[spot]) {
+    $("spotTitle").textContent = `In the spotlight: ${groupLabel(spot, gids.indexOf(spot))}`;
+    $("spotText").textContent = shareState.pair[spot].text || "";
+  }
+  const list = $("shareList");
+  list.innerHTML = "";
+  gids.forEach((gid, i) => {
+    const text = (shareState.pair[gid]?.text || "").trim();
+    if (!text) return;
+    const votes = shareState.votes[gid] || {};
+    const count = Object.keys(votes).length;
+    const voted = !!votes[uid];
+    const own = gid === mine;
+    const div = document.createElement("div");
+    div.style.margin = "0 0 14px";
+    div.innerHTML = `<div class="row spread"><h3>${esc(groupLabel(gid, i))}${own ? " (yours)" : ""}</h3>
+      <span class="small muted">${count} agree</span></div>
+      <div class="answer">${esc(text)}</div>`;
+    if (!own) {
+      const b = document.createElement("button");
+      b.className = voted ? "small" : "small secondary";
+      b.style.marginTop = "6px";
+      b.textContent = voted ? "Agreed" : "Agree";
+      b.onclick = () => set(sRef(code, `votes/${gid}/${uid}`), voted ? null : true)
+        .catch(() => { $("shareErr").textContent = "Couldn't record your vote."; });
+      div.appendChild(b);
+    }
+    list.appendChild(div);
+  });
+  if (!list.children.length) list.innerHTML = '<p class="muted">No group answers yet.</p>';
+}
+
+$("again").addEventListener("click", () => { location.href = location.pathname; });
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "rules": {
+    "sessions": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth.uid === 'WGtBMyNFn3WWrELVUj8HYS57kJD3'",
+        "students": {
+          "$uid": {
+            ".write": "auth.uid === $uid && root.child('sessions/' + $code + '/meta/phase').exists()"
+          }
+        },
+        "think": {
+          "$uid": {
+            ".write": "auth.uid === $uid && root.child('sessions/' + $code + '/meta/phase').val() === 'think'"
+          }
+        },
+        "pair": {
+          "$gid": {
+            ".write": "root.child('sessions/' + $code + '/groups/' + $gid + '/members/' + auth.uid).exists() && root.child('sessions/' + $code + '/meta/phase').val() === 'pair'"
+          }
+        },
+        "votes": {
+          "$gid": {
+            "$uid": {
+              ".write": "auth.uid === $uid && root.child('sessions/' + $code + '/meta/phase').val() === 'share'"
+            }
+          }
+        }
+      }
+    }
+  }
+}

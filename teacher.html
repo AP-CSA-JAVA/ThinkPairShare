@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Think-Pair-Share · Teacher</title>
+<link rel="stylesheet" href="tps.css">
+<style>
+  .code-big { font-size: 34px; font-weight: 800; letter-spacing: .15em; }
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .steps .pill { opacity: .45; }
+  .steps .pill.now { opacity: 1; outline: 2px solid currentColor; }
+  .gcard { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #fff; }
+  .gcard.drop { outline: 2px dashed var(--pair); }
+  .count { font-size: 14px; color: var(--muted); }
+  .scard { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #fff; }
+  .timer.big { font-size: 30px; }
+</style>
+</head>
+<body>
+<main class="wide">
+  <div class="row spread" style="margin-bottom:14px">
+    <h1>Think-Pair-Share · Teacher</h1>
+    <button id="signOutBtn" class="secondary small hidden">Sign out</button>
+  </div>
+
+  <!-- Sign in -->
+  <section id="vSignin" class="card hidden">
+    <h2>Teacher sign-in</h2>
+    <p class="muted">Sign in with the Google account that owns this Firebase project.</p>
+    <button id="googleBtn">Sign in with Google</button>
+    <div class="err" id="signinErr"></div>
+  </section>
+
+  <!-- Setup -->
+  <section id="vSetup" class="hidden">
+    <div class="card">
+      <h2>New session</h2>
+      <label for="newPrompt">Prompt</label>
+      <textarea id="newPrompt" placeholder="What happens when you add 1 to Integer.MAX_VALUE? Why?"></textarea>
+      <div class="row" style="margin-top:4px">
+        <div><label for="thinkMins">Think time</label>
+          <select id="thinkMins"><option value="60">1 min</option><option value="120" selected>2 min</option>
+            <option value="180">3 min</option><option value="300">5 min</option></select></div>
+        <div><label for="pairMins">Pair time</label>
+          <select id="pairMins"><option value="120">2 min</option><option value="180" selected>3 min</option>
+            <option value="300">5 min</option><option value="420">7 min</option></select></div>
+      </div>
+      <div class="err" id="createErr"></div>
+      <button id="createBtn" style="margin-top:6px">Create session</button>
+    </div>
+    <div class="card">
+      <h2>Reopen a session</h2>
+      <div class="row">
+        <input id="openCode" type="text" maxlength="4" placeholder="Code" style="max-width:140px;text-transform:uppercase">
+        <button id="openBtn" class="secondary">Open</button>
+      </div>
+      <div class="err" id="openErr"></div>
+    </div>
+  </section>
+
+  <!-- Session -->
+  <section id="vSession" class="hidden">
+    <div class="card">
+      <div class="row spread">
+        <div>
+          <div class="small muted">Session code</div>
+          <div class="code-big" id="sCode"></div>
+        </div>
+        <div class="grow" style="min-width:240px">
+          <div class="small muted">Student link</div>
+          <div class="row"><code id="joinLink" class="small" style="word-break:break-all"></code>
+            <button id="copyLink" class="secondary small">Copy link</button></div>
+        </div>
+        <div class="row">
+          <button id="projBtn" class="secondary">Projector view</button>
+        </div>
+      </div>
+      <div class="row spread" style="margin-top:14px">
+        <div class="steps" id="steps"></div>
+        <span class="count" id="rosterCount"></span>
+      </div>
+    </div>
+
+    <div class="card" id="controlCard">
+      <div class="row spread">
+        <div class="grow">
+          <div class="small muted" id="roundLabel"></div>
+          <div class="prompt" id="promptShow"></div>
+        </div>
+        <div class="timer big" id="timer"></div>
+      </div>
+      <div id="promptEditBox" class="hidden" style="margin-top:10px">
+        <textarea id="promptEdit"></textarea>
+        <div class="row" style="margin-top:6px"><button id="promptSave" class="small">Save prompt</button>
+          <button id="promptCancel" class="small secondary">Cancel</button></div>
+      </div>
+      <div class="row" style="margin-top:14px" id="controls"></div>
+      <div id="nextRoundBox" class="hidden" style="margin-top:12px">
+        <label for="nextPrompt">Next prompt (same students, answers cleared)</label>
+        <textarea id="nextPrompt"></textarea>
+        <p class="small muted">Download the CSV first if you want to keep this round's answers.</p>
+        <div class="row"><button id="nextGo">Start next round</button>
+          <button id="nextCancel" class="secondary">Cancel</button></div>
+      </div>
+      <div class="err" id="ctrlErr"></div>
+    </div>
+
+    <div id="phaseArea"></div>
+  </section>
+
+  <footer>Classroom tools · <a href="https://github.com/ap-csa-java">ap-csa-java</a></footer>
+</main>
+
+<script type="module">
+import {
+  auth, sRef, onValue, set, update, remove, get, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut,
+  TEACHER_UID, esc, fmtTime, now, newCode, normCode, pageUrl, PHASES, PHASE_LABEL
+} from "./tps-core.js";
+
+const $ = id => document.getElementById(id);
+const show = v => ["vSignin", "vSetup", "vSession"].forEach(x => $(x).classList.toggle("hidden", x !== v));
+
+let code = null, S = null, unsub = null, selected = null, endArmed = false, editingPrompt = false;
+
+// ---------- auth ----------
+onAuthStateChanged(auth, u => {
+  $("signOutBtn").classList.toggle("hidden", !u || u.isAnonymous);
+  if (!u || u.isAnonymous) { closeSession(); show("vSignin"); return; }
+  if (u.uid !== TEACHER_UID) {
+    show("vSignin");
+    $("signinErr").textContent = `${u.email || "This account"} is not the teacher account for this tool.`;
+    return;
+  }
+  $("signinErr").textContent = "";
+  if (!code) {
+    const last = localStorage.getItem("tps_teacher_code");
+    if (last) openSession(last, true); else show("vSetup");
+  }
+});
+$("googleBtn").onclick = async () => {
+  $("signinErr").textContent = "";
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) {
+    $("signinErr").textContent = e.code === "auth/popup-blocked"
+      ? "The browser blocked the pop-up. Allow pop-ups for this site and try again."
+      : "Sign-in failed: " + (e.code || e.message);
+  }
+};
+$("signOutBtn").onclick = () => signOut(auth);
+
+// ---------- setup ----------
+$("createBtn").onclick = async () => {
+  const prompt = $("newPrompt").value.trim();
+  if (!prompt) { $("createErr").textContent = "Write a prompt first."; return; }
+  $("createErr").textContent = ""; $("createBtn").disabled = true;
+  try {
+    let c;
+    for (let i = 0; i < 10; i++) { c = newCode(); if (!(await get(sRef(c, "meta"))).exists()) break; }
+    await set(sRef(c), { meta: {
+      prompt, phase: "lobby", round: 1, endsAt: 0, showNames: false, createdAt: now(),
+      thinkSecs: +$("thinkMins").value, pairSecs: +$("pairMins").value
+    }});
+    $("newPrompt").value = "";
+    openSession(c);
+  } catch (e) { $("createErr").textContent = "Could not create the session: " + (e.code || e.message); }
+  finally { $("createBtn").disabled = false; }
+};
+$("newPrompt").addEventListener("input", () => $("createErr").textContent = "");
+$("openCode").addEventListener("input", () => { $("openCode").value = normCode($("openCode").value); $("openErr").textContent = ""; });
+$("openBtn").onclick = () => {
+  const c = normCode($("openCode").value);
+  if (c.length !== 4) { $("openErr").textContent = "Enter a 4-character code."; return; }
+  openSession(c);
+};
+
+async function openSession(c, quiet = false) {
+  const m = await get(sRef(c, "meta")).catch(() => null);
+  if (!m || !m.exists() || m.val().phase === "ended") {
+    localStorage.removeItem("tps_teacher_code");
+    show("vSetup");
+    if (!quiet) $("openErr").textContent = "No active session with that code.";
+    return;
+  }
+  closeSession();
+  code = c;
+  localStorage.setItem("tps_teacher_code", c);
+  $("sCode").textContent = c;
+  $("joinLink").textContent = pageUrl("join.html", c);
+  show("vSession");
+  unsub = onValue(sRef(c), s => {
+    S = s.val();
+    if (!S) { closeSession(); show("vSetup"); return; }
+    render();
+  });
+}
+function closeSession() { if (unsub) unsub(); unsub = null; code = null; S = null; selected = null; }
+
+$("copyLink").onclick = async () => {
+  try { await navigator.clipboard.writeText($("joinLink").textContent); $("copyLink").textContent = "Copied"; }
+  catch { $("copyLink").textContent = "Copy failed"; }
+  setTimeout(() => $("copyLink").textContent = "Copy link", 1500);
+};
+$("projBtn").onclick = () => window.open(pageUrl("projector.html", code), "tps_projector");
+
+// ---------- helpers ----------
+const students = () => Object.fromEntries(Object.entries(S?.students || {}).filter(([, v]) => v?.name));
+const groups = () => S?.groups || {};
+const nameOf = id => students()[id]?.name || "(left)";
+const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
+const groupIds = () => Object.keys(groups()).sort();
+const groupOf = id => groupIds().find(g => groups()[g]?.members?.[id]) || null;
+const membersOf = g => Object.keys(groups()[g]?.members || {}).sort(byName);
+const onlineIds = () => Object.keys(students()).filter(id => students()[id].online !== false);
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+const gidName = n => "g" + String(n).padStart(2, "0");
+function nextGid(gs) { let n = 1; while (gs[gidName(n)]) n++; return gidName(n); }
+const fail = e => { $("ctrlErr").textContent = "Something went wrong: " + (e.code || e.message); };
+const act = (updates) => { $("ctrlErr").textContent = ""; return update(sRef(code), updates).catch(fail); };
+
+function buildGroups(ids) {
+  const order = shuffle([...ids]);
+  const out = {};
+  if (!order.length) return out;
+  const chunks = [];
+  for (let i = 0; i < order.length; i += 2) chunks.push(order.slice(i, i + 2));
+  if (chunks.length > 1 && chunks[chunks.length - 1].length === 1) chunks[chunks.length - 2].push(chunks.pop()[0]);
+  chunks.forEach((c, i) => { out[gidName(i + 1)] = { members: Object.fromEntries(c.map(id => [id, true])) }; });
+  return out;
+}
+function pairInit(gs) {
+  const p = {};
+  for (const [g, v] of Object.entries(gs)) {
+    const m = Object.keys(v.members).sort(byName);
+    p[g] = { scribe: m[0], text: "", done: false };
+  }
+  return p;
+}
+
+// ---------- phase actions ----------
+function startThink() {
+  return act({ "meta/phase": "think", "meta/endsAt": now() + S.meta.thinkSecs * 1000 });
+}
+function makeGroups() {
+  selected = null;
+  const gs = buildGroups(onlineIds());
+  const u = { groups: gs };
+  if (S.meta.phase === "pair") { u.pair = pairInit(gs); u.votes = null; }
+  return act(u);
+}
+function startPair() {
+  let gs = groups();
+  if (!Object.keys(gs).length) gs = buildGroups(onlineIds());
+  return act({ groups: gs, pair: pairInit(gs), votes: null,
+               "meta/phase": "pair", "meta/endsAt": now() + S.meta.pairSecs * 1000 });
+}
+function startShare() {
+  return act({ "meta/phase": "share", "meta/endsAt": 0, "meta/spotlight": null });
+}
+function addTime() {
+  return act({ "meta/endsAt": Math.max(S.meta.endsAt || 0, now()) + 30000 });
+}
+
+// Move a student into a group (gid), a brand-new group ("new"), or out of all groups (null).
+function moveStudent(id, target) {
+  const gs = JSON.parse(JSON.stringify(groups()));
+  const from = groupIds().find(g => gs[g]?.members?.[id]);
+  if (from === target) return;
+  if (from) delete gs[from].members[id];
+  let to = target;
+  if (to === "new") to = nextGid(gs);
+  if (to) { gs[to] = gs[to] || { members: {} }; gs[to].members[id] = true; }
+  return commitGroups(gs);
+}
+function swapStudents(a, b) {
+  const gs = JSON.parse(JSON.stringify(groups()));
+  const ga = groupIds().find(g => gs[g]?.members?.[a]);
+  const gb = groupIds().find(g => gs[g]?.members?.[b]);
+  if (ga === gb) return;
+  if (ga) { delete gs[ga].members[a]; gs[ga].members[b] = true; }
+  if (gb) { delete gs[gb].members[b]; gs[gb].members[a] = true; }
+  return commitGroups(gs);
+}
+function commitGroups(gs) {
+  for (const g of Object.keys(gs)) if (!Object.keys(gs[g].members || {}).length) delete gs[g];
+  const u = { groups: gs };
+  if (S.meta.phase === "pair") {
+    const pair = S.pair || {};
+    for (const g of Object.keys(pair)) if (!gs[g]) u[`pair/${g}`] = null;
+    for (const [g, v] of Object.entries(gs)) {
+      const m = Object.keys(v.members).sort(byName);
+      if (!pair[g]) u[`pair/${g}`] = { scribe: m[0], text: "", done: false };
+      else if (!v.members[pair[g].scribe]) u[`pair/${g}/scribe`] = m[0];
+    }
+  }
+  selected = null;
+  return act(u);
+}
+function removeStudent(id) {
+  const u = { [`students/${id}`]: null, [`think/${id}`]: null };
+  const g = groupOf(id);
+  if (g) {
+    const rest = membersOf(g).filter(m => m !== id);
+    if (rest.length) {
+      u[`groups/${g}/members/${id}`] = null;
+      if (S.pair?.[g]?.scribe === id) u[`pair/${g}/scribe`] = rest[0];
+    } else { u[`groups/${g}`] = null; u[`pair/${g}`] = null; }
+  }
+  return act(u);
+}
+
+// ---------- controls ----------
+function btn(label, fn, cls = "") {
+  const b = document.createElement("button");
+  b.textContent = label; if (cls) b.className = cls;
+  b.onclick = fn; return b;
+}
+function renderControls() {
+  const p = S.meta.phase, c = $("controls");
+  c.innerHTML = "";
+  const editBtn = btn("Edit prompt", () => {
+    editingPrompt = true; $("promptEdit").value = S.meta.prompt; $("promptEditBox").classList.remove("hidden");
+  }, "secondary");
+  if (p === "lobby") { c.append(btn("Start Think →", startThink), editBtn); }
+  if (p === "think") {
+    c.append(btn("Start Pair →", startPair), btn("+30 s", addTime, "secondary"),
+             btn(Object.keys(groups()).length ? "Reshuffle groups" : "Make groups now", makeGroups, "secondary"));
+  }
+  if (p === "pair") {
+    c.append(btn("Start Share →", startShare), btn("+30 s", addTime, "secondary"),
+             btn("Reshuffle groups", makeGroups, "secondary"));
+  }
+  if (p === "share") {
+    c.append(
+      btn(S.meta.showNames ? "Hide names" : "Show names", () => act({ "meta/showNames": !S.meta.showNames }), "secondary"),
+      btn("Clear spotlight", () => act({ "meta/spotlight": null }), "secondary"),
+      btn("Next round", () => { $("nextRoundBox").classList.remove("hidden"); $("nextPrompt").focus(); }, "secondary"));
+  }
+  if (p !== "lobby") c.append(btn("Download CSV", downloadCsv, "secondary"));
+  const end = btn(endArmed ? "Click again to end and delete" : "End session", endSession, "danger");
+  c.append(end);
+}
+$("promptSave").onclick = () => {
+  const v = $("promptEdit").value.trim();
+  if (!v) { $("ctrlErr").textContent = "The prompt can't be empty."; return; }
+  editingPrompt = false; $("promptEditBox").classList.add("hidden");
+  act({ "meta/prompt": v });
+};
+$("promptCancel").onclick = () => { editingPrompt = false; $("promptEditBox").classList.add("hidden"); };
+$("nextCancel").onclick = () => $("nextRoundBox").classList.add("hidden");
+$("nextGo").onclick = () => {
+  const v = $("nextPrompt").value.trim();
+  if (!v) { $("ctrlErr").textContent = "Write the next prompt first."; return; }
+  $("nextRoundBox").classList.add("hidden"); $("nextPrompt").value = ""; selected = null;
+  act({ think: null, pair: null, groups: null, votes: null,
+        "meta/prompt": v, "meta/phase": "lobby", "meta/endsAt": 0, "meta/spotlight": null,
+        "meta/round": (S.meta.round || 1) + 1 });
+};
+$("nextPrompt").addEventListener("input", () => $("ctrlErr").textContent = "");
+
+let endTimer = null;
+async function endSession() {
+  if (!endArmed) { endArmed = true; renderControls(); clearTimeout(endTimer);
+    endTimer = setTimeout(() => { endArmed = false; if (S) renderControls(); }, 4000); return; }
+  endArmed = false; clearTimeout(endTimer);
+  const c = code;
+  try {
+    await update(sRef(c), { "meta/phase": "ended" });   // students see "ended" and stop syncing
+    closeSession(); localStorage.removeItem("tps_teacher_code"); show("vSetup");
+    setTimeout(() => remove(sRef(c)).catch(() => {}), 3000);
+  } catch (e) { fail(e); }
+}
+
+// ---------- CSV ----------
+function downloadCsv() {
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = [["Session", code], ["Round", S.meta.round || 1], ["Prompt", S.meta.prompt], [],
+                ["Student", "Think answer", "Group", "Group answer", "Agree votes"]];
+  const gids = groupIds();
+  Object.keys(students()).sort(byName).forEach(id => {
+    const g = groupOf(id);
+    rows.push([nameOf(id), S.think?.[id]?.text || "", g ? `Group ${gids.indexOf(g) + 1}` : "",
+               g ? S.pair?.[g]?.text || "" : "", g ? Object.keys(S.votes?.[g] || {}).length : ""]);
+  });
+  const csv = rows.map(r => r.map(q).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" }));
+  a.download = `tps-${code}-round${S.meta.round || 1}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- render ----------
+function render() {
+  const p = S.meta.phase;
+  if (p === "ended") { closeSession(); show("vSetup"); return; }
+  $("steps").innerHTML = PHASES.map(x => `<span class="pill ${x} ${x === p ? "now" : ""}">${PHASE_LABEL[x]}</span>`).join("");
+  const all = Object.keys(students()).length, on = onlineIds().length;
+  $("rosterCount").textContent = `${all} student${all === 1 ? "" : "s"} · ${on} online`;
+  $("roundLabel").textContent = `Round ${S.meta.round || 1} · ${PHASE_LABEL[p]}`;
+  $("promptShow").textContent = S.meta.prompt;
+  if (!editingPrompt) $("promptEditBox").classList.add("hidden");
+  $("controlCard").className = `card phase-${p}`;
+  renderControls();
+  tickTimer();
+  const area = $("phaseArea");
+  area.innerHTML = "";
+  if (p === "lobby") area.append(rosterCard());
+  if (p === "think") area.append(thinkCard(), groupsCard(false));
+  if (p === "pair") area.append(groupsCard(true));
+  if (p === "share") area.append(shareCard());
+}
+
+function tickTimer() {
+  if (!S) { $("timer").textContent = ""; return; }
+  const e = S.meta.endsAt;
+  $("timer").textContent = e ? (e - now() > 0 ? fmtTime(e - now()) : "Time!") : "";
+}
+setInterval(tickTimer, 250);
+
+function chip(id, { pick = false, removable = false, pen = false } = {}) {
+  const s = students()[id];
+  const c = document.createElement("span");
+  c.className = `chip ${s?.online === false ? "offline" : "online"}${pick ? " pick" : ""}${selected === id ? " selected" : ""}`;
+  c.innerHTML = `<span>${esc(nameOf(id))}${pen ? " ✎" : ""}</span>`;
+  if (pick) c.onclick = () => onChip(id);
+  if (removable) {
+    const x = document.createElement("button");
+    x.textContent = "×"; x.title = "Remove from session"; x.setAttribute("aria-label", `Remove ${nameOf(id)}`);
+    x.onclick = ev => { ev.stopPropagation(); removeStudent(id); };
+    c.append(x);
+  }
+  return c;
+}
+function onChip(id) {
+  if (!selected) { selected = id; render(); return; }
+  if (selected === id) { selected = null; render(); return; }
+  const a = selected; selected = null;
+  swapStudents(a, id);
+}
+
+function rosterCard() {
+  const card = document.createElement("div"); card.className = "card";
+  const ids = Object.keys(students()).sort(byName);
+  card.innerHTML = `<h2>Joined</h2><p class="small muted">Students join at the link above with code <b>${esc(code)}</b>. Click × to remove a name.</p>`;
+  const box = document.createElement("div");
+  ids.forEach(id => box.append(chip(id, { removable: true })));
+  if (!ids.length) box.innerHTML = '<p class="muted">No one yet.</p>';
+  card.append(box); return card;
+}
+
+function thinkCard() {
+  const card = document.createElement("div"); card.className = "card";
+  const ids = Object.keys(students()).sort(byName);
+  const doneN = ids.filter(id => S.think?.[id]?.done).length;
+  card.innerHTML = `<div class="row spread"><h2>Think answers</h2><span class="count">${doneN} / ${ids.length} submitted</span></div>`;
+  const grid = document.createElement("div"); grid.className = "grid";
+  ids.forEach(id => {
+    const t = S.think?.[id];
+    const status = t?.done ? '<span class="pill ok">Submitted</span>'
+      : t?.text?.trim() ? '<span class="pill think">Writing</span>' : '<span class="pill">Blank</span>';
+    const d = document.createElement("div"); d.className = "scard";
+    d.innerHTML = `<div class="row spread"><b>${esc(nameOf(id))}</b>${status}</div>
+      <div class="answer ${t?.text?.trim() ? "" : "empty"}" style="margin-top:6px">${esc(t?.text?.trim() || "Nothing yet")}</div>`;
+    grid.append(d);
+  });
+  card.append(grid); return card;
+}
+
+function groupsCard(pairPhase) {
+  const card = document.createElement("div"); card.className = "card";
+  const gids = groupIds();
+  const doneN = gids.filter(g => S.pair?.[g]?.done).length;
+  card.innerHTML = `<div class="row spread"><h2>${pairPhase ? "Groups" : "Groups for Pair"}</h2>
+    <span class="count">${pairPhase ? `${doneN} / ${gids.length} groups submitted` : "Students see these when Pair starts"}</span></div>
+    <p class="small muted">Click two names to swap them. Click one name, then "Move here" to move it.
+    ${pairPhase ? "✎ marks who has the pen." : gids.length ? "" : "Groups are made from online students when you click Start Pair, or click Make groups now to adjust them first."}</p>`;
+  const grid = document.createElement("div"); grid.className = "grid";
+  gids.forEach((g, i) => {
+    const d = document.createElement("div"); d.className = "gcard";
+    const pr = S.pair?.[g];
+    const head = document.createElement("div"); head.className = "row spread";
+    head.innerHTML = `<b>Group ${i + 1}</b>${pairPhase ? (pr?.done ? '<span class="pill ok">Submitted</span>' : '<span class="pill pair">Working</span>') : ""}`;
+    d.append(head);
+    const chips = document.createElement("div"); chips.style.margin = "6px 0";
+    membersOf(g).forEach(id => chips.append(chip(id, { pick: true, pen: pairPhase && pr?.scribe === id })));
+    d.append(chips);
+    if (selected && groupOf(selected) !== g) d.append(btn("Move here", () => { const s = selected; moveStudent(s, g); }, "small secondary"));
+    if (pairPhase) {
+      const a = document.createElement("div");
+      a.className = `answer ${pr?.text?.trim() ? "" : "empty"}`; a.style.marginTop = "6px";
+      a.textContent = pr?.text?.trim() || "Nothing yet";
+      d.append(a);
+    }
+    grid.append(d);
+  });
+  card.append(grid);
+
+  const loose = Object.keys(students()).filter(id => !groupOf(id)).sort(byName);
+  if (gids.length || loose.length) {
+    const u = document.createElement("div"); u.className = "gcard"; u.style.marginTop = "12px";
+    u.innerHTML = `<b>Not in a group</b> <span class="small muted">(late joiners land here)</span>`;
+    const chips = document.createElement("div"); chips.style.margin = "6px 0";
+    loose.forEach(id => chips.append(chip(id, { pick: true })));
+    if (!loose.length) chips.innerHTML = '<span class="small muted">Everyone is placed.</span>';
+    u.append(chips);
+    const r = document.createElement("div"); r.className = "row";
+    if (selected) {
+      if (groupOf(selected)) r.append(btn("Move here", () => { const s = selected; moveStudent(s, null); }, "small secondary"));
+      r.append(btn("Start a new group with selected", () => { const s = selected; moveStudent(s, "new"); }, "small secondary"));
+    }
+    if (loose.length && gids.length) {
+      r.append(btn("Place everyone left", () => {
+        const gs = JSON.parse(JSON.stringify(groups()));
+        loose.filter(id => students()[id].online !== false).forEach(id => {
+          const smallest = Object.keys(gs).sort((a, b) => Object.keys(gs[a].members).length - Object.keys(gs[b].members).length)[0];
+          gs[smallest].members[id] = true;   // late joiners make the smallest group a triad
+        });
+        commitGroups(gs);
+      }, "small secondary"));
+    }
+    u.append(r);
+    card.append(u);
+  }
+  return card;
+}
+
+function shareCard() {
+  const card = document.createElement("div"); card.className = "card";
+  const gids = groupIds();
+  const votes = g => Object.keys(S.votes?.[g] || {}).length;
+  const order = gids.filter(g => S.pair?.[g]?.text?.trim()).sort((a, b) => votes(b) - votes(a));
+  card.innerHTML = `<div class="row spread"><h2>Group answers</h2><span class="count">Sorted by agree votes</span></div>
+    <p class="small muted">Spotlight puts one answer on every screen and the projector. Names show only if you click Show names.</p>`;
+  const grid = document.createElement("div"); grid.className = "grid";
+  order.forEach(g => {
+    const i = gids.indexOf(g);
+    const d = document.createElement("div");
+    d.className = `gcard${S.meta.spotlight === g ? " spot" : ""}`;
+    d.innerHTML = `<div class="row spread"><b>Group ${i + 1}</b><span class="pill share">${votes(g)} agree</span></div>
+      <div class="small muted" style="margin:4px 0">${membersOf(g).map(id => esc(nameOf(id))).join(", ")}</div>
+      <div class="answer">${esc(S.pair[g].text.trim())}</div>`;
+    const on = S.meta.spotlight === g;
+    const b = btn(on ? "In spotlight" : "Spotlight", () => act({ "meta/spotlight": on ? null : g }), on ? "small" : "small secondary");
+    b.style.marginTop = "8px"; d.append(b);
+    grid.append(d);
+  });
+  if (!order.length) grid.innerHTML = '<p class="muted">No group answers were written.</p>';
+  card.append(grid); return card;
+}
+</script>
+</body>
+</html>
